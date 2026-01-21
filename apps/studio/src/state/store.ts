@@ -28,6 +28,9 @@ type StudioState = {
 
   meshFilePath: string | null
   setMeshFilePath: (path: string | null) => void
+
+  profilesFilePath: string | null
+  setProfilesFilePath: (path: string | null) => void
 }
 
 export const useStudioStore = create<StudioState>((set) => ({
@@ -74,4 +77,7 @@ export const useStudioStore = create<StudioState>((set) => ({
 
   meshFilePath: null,
   setMeshFilePath: (meshFilePath) => set({ meshFilePath }),
+
+  profilesFilePath: null,
+  setProfilesFilePath: (profilesFilePath) => set({ profilesFilePath }),
 }))

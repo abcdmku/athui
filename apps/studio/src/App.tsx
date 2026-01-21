@@ -8,6 +8,9 @@ import { useStudioStore } from './state/store'
 
 const GeometryPreview = React.lazy(() => import('./components/GeometryPreview').then((m) => ({ default: m.GeometryPreview })))
 const StlProfile = React.lazy(() => import('./components/StlProfile').then((m) => ({ default: m.StlProfile })))
+const ProfilesCsvProfile = React.lazy(() =>
+  import('./components/ProfilesCsvProfile').then((m) => ({ default: m.ProfilesCsvProfile })),
+)
 
 type RightTab = 'logs' | 'preview' | 'profile' | 'files'
 
@@ -28,6 +31,8 @@ export function App() {
   const setGeometryFilePath = useStudioStore((s) => s.setGeometryFilePath)
   const meshFilePath = useStudioStore((s) => s.meshFilePath)
   const setMeshFilePath = useStudioStore((s) => s.setMeshFilePath)
+  const profilesFilePath = useStudioStore((s) => s.profilesFilePath)
+  const setProfilesFilePath = useStudioStore((s) => s.setProfilesFilePath)
 
   const [tab, setTab] = useState<RightTab>('logs')
   const [busy, setBusy] = useState(false)
@@ -63,6 +68,7 @@ export function App() {
         setFiles(msg.files)
         setGeometryFilePath(pickGeometryFile(msg.files))
         setMeshFilePath(pickMeshFile(msg.files))
+        setProfilesFilePath(pickProfilesFile(msg.files))
       }
       if (msg.type === 'run:done') {
         setBusy(false)
@@ -70,7 +76,7 @@ export function App() {
       }
     })
     return () => ws.close()
-  }, [appendLogs, projectId, setDirty, setFiles, setGeometryFilePath, setMeshFilePath])
+  }, [appendLogs, projectId, setDirty, setFiles, setGeometryFilePath, setMeshFilePath, setProfilesFilePath])
 
   const lastExitScanIndex = useRef(0)
   useEffect(() => {
@@ -119,6 +125,7 @@ export function App() {
       setFiles(files)
       setGeometryFilePath(pickGeometryFile(files))
       setMeshFilePath(pickMeshFile(files))
+      setProfilesFilePath(pickProfilesFile(files))
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       appendLogs([`[ui] failed to list files: ${message}`])
@@ -216,7 +223,7 @@ export function App() {
 
           {tab === 'profile' && (
             <div id="panel-profile" role="tabpanel" aria-labelledby="tab-profile" tabIndex={0} className="panelInner">
-              <ProfilePanel projectId={projectId} stlPath={meshFilePath ?? geometryFilePath} />
+              <ProfilePanel projectId={projectId} profilesPath={profilesFilePath} stlPath={meshFilePath ?? geometryFilePath} />
             </div>
           )}
 
@@ -284,17 +291,44 @@ function pickMeshFile(files: { path: string; size: number }[]): string | null {
   return null
 }
 
-function ProfilePanel({ projectId, stlPath }: { projectId: string | null; stlPath: string | null }) {
+function pickProfilesFile(files: { path: string; size: number }[]): string | null {
+  const csvFiles = files.filter((x) => x.path.toLowerCase().endsWith('.csv'))
+  const preferredNames = ['project_profiles_athui.csv', 'mesh_profiles_athui.csv', 'project_profiles.csv', 'mesh_profiles.csv']
+  for (const name of preferredNames) {
+    const preferred = csvFiles.find((x) => x.path.toLowerCase().endsWith(name))
+    if (preferred) return preferred.path
+  }
+  const anyProfiles = csvFiles.find((x) => x.path.toLowerCase().endsWith('_profiles.csv'))
+  if (anyProfiles) return anyProfiles.path
+  const fuzzy = csvFiles.find((x) => x.path.toLowerCase().includes('profiles'))
+  return fuzzy?.path ?? null
+}
+
+function ProfilePanel({
+  projectId,
+  profilesPath,
+  stlPath,
+}: {
+  projectId: string | null
+  profilesPath: string | null
+  stlPath: string | null
+}) {
   const outputsRevision = useStudioStore((s) => s.outputsRevision)
   const dirty = useStudioStore((s) => s.dirty)
   if (!projectId) return <div className="logBox muted">No project.</div>
-  if (!stlPath || !stlPath.toLowerCase().endsWith('.stl')) {
-    return <div className="logBox muted">No STL mesh found yet. Run the project to generate outputs.</div>
-  }
   return (
     <Suspense fallback={<div className="logBox muted">Loading profile.</div>}>
       {dirty ? <div className="logBox muted">Profile is from the last run. Click Run to update.</div> : null}
-      <StlProfile key={`${stlPath}:${outputsRevision}`} modelUrl={`${api.rawFileUrl(projectId, stlPath)}&v=${outputsRevision}`} />
+      {profilesPath && profilesPath.toLowerCase().endsWith('.csv') ? (
+        <ProfilesCsvProfile
+          key={`${profilesPath}:${outputsRevision}`}
+          csvUrl={`${api.rawFileUrl(projectId, profilesPath)}&v=${outputsRevision}`}
+        />
+      ) : stlPath && stlPath.toLowerCase().endsWith('.stl') ? (
+        <StlProfile key={`${stlPath}:${outputsRevision}`} modelUrl={`${api.rawFileUrl(projectId, stlPath)}&v=${outputsRevision}`} />
+      ) : (
+        <div className="logBox muted">No exported profiles or STL mesh found yet. Run the project to generate outputs.</div>
+      )}
     </Suspense>
   )
 }

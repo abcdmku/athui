@@ -47,6 +47,19 @@ function normalizeCfgText(text: string): string {
   return normalized.length ? normalized + '\n' : ''
 }
 
+function ensureGridExportProfiles(cfgText: string): string {
+  const lower = cfgText.toLowerCase()
+  if (lower.includes('exportprofiles')) return cfgText
+
+  return (
+    cfgText +
+    [
+      '',
+      'GridExport:athui = { ProfileRange = 0,9999 ExportProfiles = 1 ExportSlices = 0 SeparateFiles = 0 FileExtension = "csv" Delimiter = ";" }',
+    ].join('\n')
+  )
+}
+
 export function getProject(id: string): Project | undefined {
   return projects.get(id)
 }
@@ -218,7 +231,7 @@ export async function runProject(project: Project) {
     typeof cfgTextOverride === 'string' && cfgTextOverride.trim().length
       ? normalizeCfgText(cfgTextOverride)
       : serializeAthDefinition(project.config)
-  await fs.writeFile(definitionPath, cfgText, 'utf8')
+  await fs.writeFile(definitionPath, ensureGridExportProfiles(cfgText), 'utf8')
 
   appendLogs(project, [`[run] ${athExe} ${definitionPath}`])
   appendLogs(project, [`[run] OutputRootDir = ${outputsDir}`])

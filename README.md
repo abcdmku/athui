@@ -29,3 +29,10 @@ npm run setup:gmsh
 - Mesh generation (Gmsh):
   - Set UI field `Mesh Command` to something like `C:\path\to\gmsh.exe %f -`, or set `ATHUI_MESHCMD`.
   - If left blank, the server attempts to auto-detect `gmsh.exe` on `PATH`.
+
+## Profiles
+
+The Studio "Profile" tab prefers Ath's native profile export (User Guide: `GridExport`, `*_profiles.csv`) over deriving a profile from the STL mesh.
+
+- The server injects `GridExport:athui = { ExportProfiles = 1 ... }` into `project.cfg` unless your config already mentions `ExportProfiles`.
+- Generated files show up under the project outputs as `*_profiles.csv` (semicolon-delimited; blank lines separate curves).
