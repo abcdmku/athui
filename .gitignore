@@ -1,0 +1,24 @@
+# Node / JS
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnp.*
+
+# Builds
+dist/
+build/
+.vite/
+
+# Local app data
+.athui-data/
+ath-*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+
+.claude
+.prompt

@@ -1,0 +1,17 @@
+{
+  "name": "athui",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm -w apps/server run dev\" \"npm -w apps/studio run dev\"",
+    "build": "npm -w apps/server run build && npm -w apps/studio run build",
+    "start": "npm -w apps/server run start",
+    "setup:gmsh": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-gmsh.ps1"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "pdfjs-dist": "^5.4.530"
+  }
+}
