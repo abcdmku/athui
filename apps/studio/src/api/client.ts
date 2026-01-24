@@ -3,7 +3,7 @@ type LogsMessage =
   | { type: 'logs:append'; lines: string[] }
 
 type FilesUpdateMessage = { type: 'files:update'; files: { path: string; size: number }[] }
-type RunDoneMessage = { type: 'run:done' }
+type RunDoneMessage = { type: 'run:done'; ok?: boolean; code?: number | null; signal?: string | null }
 
 export type StudioSocketMessage = LogsMessage | FilesUpdateMessage | RunDoneMessage
 

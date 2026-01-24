@@ -36,3 +36,17 @@ The Studio "Profile" tab prefers Ath's native profile export (User Guide: `GridE
 
 - The server injects `GridExport:athui = { ExportProfiles = 1 ... }` into `project.cfg` unless your config already mentions `ExportProfiles`.
 - Generated files show up under the project outputs as `*_profiles.csv` (semicolon-delimited; blank lines separate curves).
+
+## UI input verification
+
+Sanity checks that the Studio schema inputs are wired correctly:
+
+```bash
+npm run validate:ui-inputs
+```
+
+Optional heavier check that runs `ath.exe`/`gmsh.exe` for a small geometry subset and ensures outputs change:
+
+```bash
+npm run validate:ui-effects
+```

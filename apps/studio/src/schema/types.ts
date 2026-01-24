@@ -1,6 +1,6 @@
 export type ValueType = 'f' | 'i' | 'b' | 'ex' | 's' | 'f[]' | 'i[]' | 'c' | '{}'
 
-export type UiWidget = 'number' | 'text' | 'textarea' | 'select' | 'checkbox' | 'folder' | 'numberList' | 'object'
+export type UiWidget = 'number' | 'text' | 'textarea' | 'select' | 'checkbox' | 'folder' | 'numberList' | 'object' | 'hornParts'
 
 export type UiOption = { value: string | number; label: string }
 

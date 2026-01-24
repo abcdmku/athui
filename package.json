@@ -8,7 +8,9 @@
     "dev": "concurrently \"npm -w apps/server run dev\" \"npm -w apps/studio run dev\"",
     "build": "npm -w apps/server run build && npm -w apps/studio run build",
     "start": "npm -w apps/server run start",
-    "setup:gmsh": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-gmsh.ps1"
+    "setup:gmsh": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-gmsh.ps1",
+    "validate:ui-inputs": "tsx scripts/validate-ui-inputs.ts",
+    "validate:ui-effects": "tsx scripts/run-ui-input-matrix.ts --section=geometry --max=12"
   },
   "devDependencies": {
     "concurrently": "^9.1.0",

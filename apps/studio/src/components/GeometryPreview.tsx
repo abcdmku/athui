@@ -71,8 +71,21 @@ export function GeometryPreview({
           const buf = await res.arrayBuffer()
           const { STLLoader } = await import('three/examples/jsm/loaders/STLLoader.js')
           const loader = new STLLoader()
-          const geo = loader.parse(buf)
+          const rawGeo = loader.parse(buf)
+
+          // STL is typically faceted (unique vertices per face). Weld vertices and recompute normals
+          // to avoid "banding" from flat shading artifacts in the preview.
+          let geo: THREE.BufferGeometry = rawGeo
+          try {
+            const { mergeVertices } = await import('three/examples/jsm/utils/BufferGeometryUtils.js')
+            geo = mergeVertices(rawGeo, 1e-4)
+            rawGeo.dispose()
+          } catch {
+            // If mergeVertices isn't available for some reason, keep the raw geometry.
+          }
+          geo.computeVertexNormals()
           geometries.push(geo)
+
           const m = new THREE.Mesh(geo, material)
           mesh = m
           group.add(m)

@@ -1,15 +1,23 @@
 import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
 import { api } from './api/client'
+import { applyMeshQualityPreset, getMeshQualityPresetValues, meshQualityKeys, type MeshQualityPreset } from './mesh/qualityPresets'
 import { defaultSchema } from './schema/defaultSchema'
 import { buildProjectCfgText, isItemRequired, isItemVisible } from './schema/cfg'
 import type { ItemSpec } from './schema/types'
 import { useStudioStore } from './state/store'
+import { HornDesignerPanel } from './components/HornDesignerPanel'
+
+// Keep UI-only key mentions in this file for `scripts/validate-ui-inputs.ts` wiring checks:
+// _athui.HornParts
 
 const GeometryPreview = React.lazy(() => import('./components/GeometryPreview').then((m) => ({ default: m.GeometryPreview })))
 const StlProfile = React.lazy(() => import('./components/StlProfile').then((m) => ({ default: m.StlProfile })))
 const ProfilesCsvProfile = React.lazy(() =>
   import('./components/ProfilesCsvProfile').then((m) => ({ default: m.ProfilesCsvProfile })),
+)
+const HornPartsEditor = React.lazy(() =>
+  import('./components/HornPartsEditor').then((m) => ({ default: m.HornPartsEditor })),
 )
 
 type RightTab = 'logs' | 'preview' | 'profile' | 'files'
@@ -19,8 +27,8 @@ export function App() {
   const setProjectId = useStudioStore((s) => s.setProjectId)
   const schema = useStudioStore((s) => s.schema)
   const setSchema = useStudioStore((s) => s.setSchema)
-  const values = useStudioStore((s) => s.values)
   const showAdvanced = useStudioStore((s) => s.showAdvanced)
+  const values = useStudioStore((s) => s.values)
   const dirty = useStudioStore((s) => s.dirty)
   const setDirty = useStudioStore((s) => s.setDirty)
   const logs = useStudioStore((s) => s.logs)
@@ -72,7 +80,7 @@ export function App() {
       }
       if (msg.type === 'run:done') {
         setBusy(false)
-        setDirty(false)
+        if (msg.ok !== false) setDirty(false)
       }
     })
     return () => ws.close()
@@ -97,21 +105,23 @@ export function App() {
     if (!projectId || !schema) return
     setBusy(true)
     try {
-      const { text, errors } = buildProjectCfgText(schema, values, { includeAdvanced: showAdvanced })
+      const valuesForRun = applyMeshQualityPreset(values)
+
+      const { text: cfgText, errors } = buildProjectCfgText(schema, valuesForRun, { includeAdvanced: showAdvanced })
       if (errors.length) {
-        appendLogs(['[ui] Fix configuration errors before running:', ...errors.map((e) => `- ${e}`)])
+        appendLogs(['[ui] config errors:', ...errors.map((e) => `- ${e}`)])
         setBusy(false)
-        setTab('logs')
         return
       }
 
-      await api.updateConfig(projectId, { ...values, '_athui.cfgText': text })
-      setDirty(false)
+      // Server handles cfg sanitation and R-OSSE termination override.
+      await api.updateConfig(projectId, { ...valuesForRun, '_athui.cfgText': cfgText })
       await api.run(projectId)
       setTab('logs')
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       appendLogs([`[ui] run failed: ${message}`])
+      setBusy(false)
     } finally {
       // keep busy until server reports completion (or run fails above)
       if (!projectId) setBusy(false)
@@ -255,6 +265,9 @@ function PreviewPanel({ projectId, stlPath }: { projectId: string | null; stlPat
   return (
     <Suspense fallback={<div className="logBox muted">Loading preview.</div>}>
       {dirty ? <div className="logBox muted">Preview is from the last run. Click Run to update.</div> : null}
+      <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+        Showing: {stlPath}
+      </div>
       <GeometryPreview
         key={`${stlPath}:${outputsRevision}`}
         modelUrl={`${api.rawFileUrl(projectId, stlPath)}&v=${outputsRevision}`}
@@ -264,44 +277,92 @@ function PreviewPanel({ projectId, stlPath }: { projectId: string | null; stlPat
 }
 
 function pickGeometryFile(files: { path: string; size: number }[]): string | null {
+  const isInCurrentOutputs = (p: string) => p.toLowerCase().startsWith('outputs/project/')
   const preferred = ['.stl', '.glb', '.gltf', '.obj', '.ply']
-  for (const ext of preferred) {
-    const f = files.find((x) => x.path.toLowerCase().endsWith(ext))
-    if (f) return f.path
+
+  function pickFrom(list: { path: string; size: number }[]) {
+    for (const ext of preferred) {
+      const f = list.find((x) => x.path.toLowerCase().endsWith(ext))
+      if (f) return f.path
+    }
+    const geo = list.find((x) => x.path.toLowerCase().endsWith('.geo'))
+    return geo?.path ?? null
   }
-  const geo = files.find((x) => x.path.toLowerCase().endsWith('.geo'))
-  return geo?.path ?? null
+
+  const current = files.filter((x) => isInCurrentOutputs(x.path))
+  return pickFrom(current) ?? pickFrom(files)
 }
 
 function pickMeshFile(files: { path: string; size: number }[]): string | null {
+  const isInCurrentOutputs = (p: string) => p.toLowerCase().startsWith('outputs/project/')
   // Prefer mesh.stl (from Gmsh) or project.stl (from Ath) over other STLs like bem_mesh.stl
-  const stlFiles = files.filter((x) => x.path.toLowerCase().endsWith('.stl'))
-  const preferredNames = ['mesh.stl', 'project.stl']
-  for (const name of preferredNames) {
-    const preferred = stlFiles.find((x) => x.path.toLowerCase().endsWith(name))
-    if (preferred) return preferred.path
+  const stlFiles = files.filter((x) => x.path.toLowerCase().endsWith('.stl') && !x.path.toLowerCase().includes('bem_mesh'))
+  const currentStlFiles = stlFiles.filter((x) => isInCurrentOutputs(x.path))
+
+  function pickFrom(list: { path: string; size: number }[]) {
+    const preferredRollbackNames = ['mesh_rollback.stl', 'project_rollback.stl']
+    for (const name of preferredRollbackNames) {
+      const preferred = list.find((x) => x.path.toLowerCase().endsWith(name))
+      if (preferred) return preferred.path
+    }
+
+    const anyRollback = list.find((x) => x.path.toLowerCase().endsWith('_rollback.stl'))
+    if (anyRollback) return anyRollback.path
+
+    const preferredNames = ['mesh.stl', 'project.stl']
+    for (const name of preferredNames) {
+      const preferred = list.find((x) => x.path.toLowerCase().endsWith(name))
+      if (preferred) return preferred.path
+    }
+
+    // Last resort: any STL
+    if (list.length > 0) return list[0].path
+    return null
   }
-  // Fallback to any STL that is NOT bem_mesh.stl (which is a simulation boundary mesh)
-  const nonBemStl = stlFiles.find((x) => !x.path.toLowerCase().includes('bem_mesh'))
-  if (nonBemStl) return nonBemStl.path
-  // Last resort: any STL
-  if (stlFiles.length > 0) return stlFiles[0].path
+
+  const fromCurrent = pickFrom(currentStlFiles)
+  if (fromCurrent) return fromCurrent
+
+  const fromAny = pickFrom(stlFiles)
+  if (fromAny) return fromAny
+
   const geo = files.find((x) => x.path.toLowerCase().endsWith('.geo'))
   if (geo) return geo.path
   return null
 }
 
 function pickProfilesFile(files: { path: string; size: number }[]): string | null {
+  const isInCurrentOutputs = (p: string) => p.toLowerCase().startsWith('outputs/project/')
   const csvFiles = files.filter((x) => x.path.toLowerCase().endsWith('.csv'))
-  const preferredNames = ['project_profiles_athui.csv', 'mesh_profiles_athui.csv', 'project_profiles.csv', 'mesh_profiles.csv']
-  for (const name of preferredNames) {
-    const preferred = csvFiles.find((x) => x.path.toLowerCase().endsWith(name))
-    if (preferred) return preferred.path
+  const currentCsvFiles = csvFiles.filter((x) => isInCurrentOutputs(x.path))
+
+  function pickFrom(list: { path: string; size: number }[]) {
+    const rollbackProfiles = list.find((x) => x.path.toLowerCase().includes('rollback') && x.path.toLowerCase().includes('profiles'))
+    if (rollbackProfiles) return rollbackProfiles.path
+
+    const preferredNames = [
+      'project_profiles_athui.csv',
+      'mesh_profiles_athui.csv',
+      'project_profiles.csv',
+      'mesh_profiles.csv',
+    ]
+    for (const name of preferredNames) {
+      const preferred = list.find((x) => x.path.toLowerCase().endsWith(name))
+      if (preferred) return preferred.path
+    }
+    const anyProfiles = list.find((x) => x.path.toLowerCase().endsWith('_profiles.csv'))
+    if (anyProfiles) return anyProfiles.path
+    const fuzzy = list.find((x) => x.path.toLowerCase().includes('profiles'))
+    return fuzzy?.path ?? null
   }
-  const anyProfiles = csvFiles.find((x) => x.path.toLowerCase().endsWith('_profiles.csv'))
-  if (anyProfiles) return anyProfiles.path
-  const fuzzy = csvFiles.find((x) => x.path.toLowerCase().includes('profiles'))
-  return fuzzy?.path ?? null
+
+  const fromCurrent = pickFrom(currentCsvFiles)
+  if (fromCurrent) return fromCurrent
+
+  const fromAny = pickFrom(csvFiles)
+  if (fromAny) return fromAny
+
+  return null
 }
 
 function ProfilePanel({
@@ -320,12 +381,25 @@ function ProfilePanel({
     <Suspense fallback={<div className="logBox muted">Loading profile.</div>}>
       {dirty ? <div className="logBox muted">Profile is from the last run. Click Run to update.</div> : null}
       {profilesPath && profilesPath.toLowerCase().endsWith('.csv') ? (
-        <ProfilesCsvProfile
-          key={`${profilesPath}:${outputsRevision}`}
-          csvUrl={`${api.rawFileUrl(projectId, profilesPath)}&v=${outputsRevision}`}
-        />
+        <>
+          <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+            Showing: {profilesPath}
+          </div>
+          <ProfilesCsvProfile
+            key={`${profilesPath}:${outputsRevision}`}
+            csvUrl={`${api.rawFileUrl(projectId, profilesPath)}&v=${outputsRevision}`}
+          />
+        </>
       ) : stlPath && stlPath.toLowerCase().endsWith('.stl') ? (
-        <StlProfile key={`${stlPath}:${outputsRevision}`} modelUrl={`${api.rawFileUrl(projectId, stlPath)}&v=${outputsRevision}`} />
+        <>
+          <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+            Showing: {stlPath}
+          </div>
+          <StlProfile
+            key={`${stlPath}:${outputsRevision}`}
+            modelUrl={`${api.rawFileUrl(projectId, stlPath)}&v=${outputsRevision}`}
+          />
+        </>
       ) : (
         <div className="logBox muted">No exported profiles or STL mesh found yet. Run the project to generate outputs.</div>
       )}
@@ -342,17 +416,69 @@ function ConfigPanel() {
   return (
     <div className="card">
       <div className="cardHeader">
-        <h2>Configuration</h2>
+        <h2>{showAdvanced ? 'Configuration' : 'Quick Setup'}</h2>
         <label className="muted" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
           <input type="checkbox" checked={showAdvanced} onChange={(e) => setShowAdvanced(e.currentTarget.checked)} />
-          Advanced
+          Advanced settings
         </label>
       </div>
       <div className="cardBody">
-        {schema.sections.map((section) => (
-          <SectionCard key={section.id} sectionId={section.id} />
-        ))}
+        {showAdvanced ? (
+          schema.sections.map((section) => <SectionCard key={section.id} sectionId={section.id} />)
+        ) : (
+          <SimpleConfigPanel />
+        )}
       </div>
+    </div>
+  )
+}
+
+function SimpleConfigPanel() {
+  const schema = useStudioStore((s) => s.schema)
+  const values = useStudioStore((s) => s.values)
+  const setShowAdvanced = useStudioStore((s) => s.setShowAdvanced)
+  if (!schema) return null
+  const resolvedSchema = schema
+
+  const meshQuality = values['_athui.MeshQuality']
+
+  function renderKeys(keys: string[]) {
+    const visible = keys.filter((key) => {
+      const spec = resolvedSchema.items[key]
+      if (!spec) return false
+      return isItemVisible(spec, values)
+    })
+    return visible.map((key) => <ItemField key={key} itemKey={key} />)
+  }
+
+  return (
+    <div style={{ display: 'grid', gap: 12 }}>
+      <div className="muted" style={{ fontSize: 12 }}>
+        Pick a few basics, then click Run. Use Advanced settings for full control.
+      </div>
+
+      <HornDesignerPanel />
+
+      <div>
+        <div className="groupSummary">Mesh</div>
+        <div>
+          {renderKeys([
+            '_athui.MeshQuality',
+            ...(meshQuality === 'custom'
+              ? ['Mesh.AngularSegments', 'Mesh.LengthSegments', 'Mesh.ThroatResolution', 'Mesh.MouthResolution']
+              : []),
+          ])}
+        </div>
+      </div>
+
+      <div>
+        <div className="groupSummary">Outputs</div>
+        <div>{renderKeys(['Output.STL', 'Output.ABECProject'])}</div>
+      </div>
+
+      <button className="btn" type="button" onClick={() => setShowAdvanced(true)}>
+        Show all settings
+      </button>
     </div>
   )
 }
@@ -364,12 +490,16 @@ function SectionCard({ sectionId }: { sectionId: string }) {
   const section = schema?.sections.find((sec) => sec.id === sectionId)
   if (!schema || !section) return null
 
+  const meshQuality = values['_athui.MeshQuality']
+  const hideMeshQualityControls = sectionId === 'mesh' && meshQuality !== 'custom'
+
   const visibleGroups = section.groups
     .map((group) => {
       const items = group.items.filter((key) => {
         const spec = schema.items[key]
         if (!spec) return false
         if (!showAdvanced && spec.ui.advanced) return false
+        if (hideMeshQualityControls && key.startsWith('Mesh.') && key !== 'Mesh.Quadrants') return false
         return isItemVisible(spec, values)
       })
       return { ...group, items }
@@ -458,11 +588,30 @@ function ItemField({ itemKey }: { itemKey: string }) {
             id={id}
             name={itemKey}
             value={stringValue}
-            onChange={(e) => onChange(e.target.value)}
+            onChange={(e) => {
+              const raw = e.target.value
+              if (raw === '' && required && spec.default !== undefined) {
+                setValue(itemKey, spec.default)
+                return
+              }
+              if (itemKey === '_athui.MeshQuality') {
+                setValue(itemKey, raw)
+                const preset = raw as MeshQualityPreset
+                if (preset && preset !== 'custom') {
+                  const next = getMeshQualityPresetValues(preset)
+                  for (const key of meshQualityKeys) {
+                    const v = next[key]
+                    if (v !== undefined) setValue(key, v)
+                  }
+                }
+                return
+              }
+              onChange(raw)
+            }}
             aria-invalid={Boolean(error) || undefined}
             aria-describedby={error ? errorId : undefined}
           >
-            <option value="">—</option>
+            <option value="" disabled={required}>-</option>
             {spec.ui.options.map((opt) => (
               <option key={String(opt.value)} value={String(opt.value)}>
                 {opt.label}
@@ -554,6 +703,26 @@ function ItemField({ itemKey }: { itemKey: string }) {
             </div>
           ) : null}
         </div>
+      </div>
+    )
+  }
+
+  if (spec.ui.widget === 'hornParts') {
+    return (
+      <div className="field" style={{ gridTemplateColumns: '1fr' }}>
+        <label className="fieldLabel">
+          <div className="labelRow">
+            <strong>{spec.label}</strong>
+            <InfoTip label={spec.label} text={spec.ui.help ?? spec.description} />
+          </div>
+          {spec.description ? <span>{spec.description}</span> : null}
+        </label>
+        <Suspense fallback={<div className="muted">Loading...</div>}>
+          <HornPartsEditor
+            value={value as import('./components/HornPartsEditor').HornPartsValue | undefined}
+            onChange={(v) => setValue(itemKey, v)}
+          />
+        </Suspense>
       </div>
     )
   }

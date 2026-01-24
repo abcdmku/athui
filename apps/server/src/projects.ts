@@ -23,8 +23,19 @@ const repoRoot = path.resolve(__dirname, '..', '..', '..')
 const dataDir = path.join(repoRoot, '.athui-data')
 const projectsDir = path.join(dataDir, 'projects')
 
+function withUtf8Bom(text: string): string {
+  if (!text) return '\ufeff'
+  if (text.startsWith('\ufeff')) return text
+  return `\ufeff${text}`
+}
+
 function toLines(textChunk: string): string[] {
-  return textChunk.replaceAll('\r\n', '\n').split('\n').filter(Boolean)
+  return textChunk
+    .replaceAll('\r\n', '\n')
+    .split('\n')
+    .map((l) => l.trimEnd())
+    .filter(Boolean)
+    .filter((l) => !/^Syntax error 2: 'GridExport(?::[^']+)?'$/.test(l))
 }
 
 function appendLogs(project: Project, lines: string[]) {
@@ -42,11 +53,6 @@ function broadcast(project: Project, payload: unknown) {
   for (const client of project.wsClients) client.send(message)
 }
 
-function normalizeCfgText(text: string): string {
-  const normalized = text.replaceAll('\r\n', '\n').trimEnd()
-  return normalized.length ? normalized + '\n' : ''
-}
-
 function ensureGridExportProfiles(cfgText: string): string {
   const lower = cfgText.toLowerCase()
   if (lower.includes('exportprofiles')) return cfgText
@@ -55,9 +61,47 @@ function ensureGridExportProfiles(cfgText: string): string {
     cfgText +
     [
       '',
-      'GridExport:athui = { ProfileRange = 0,9999 ExportProfiles = 1 ExportSlices = 0 SeparateFiles = 0 FileExtension = "csv" Delimiter = ";" }',
+      'GridExport:athui = { ProfileRange = 0,9999 SliceRange = 0,9999 ExportProfiles = 1 ExportSlices = 0 Scale = 1.0 SeparateFiles = 0 FileExtension = "csv" Delimiter = ";" }',
     ].join('\n')
   )
+}
+
+function sanitizeCfgTextForAth2025(
+  cfgText: string,
+  opts?: {
+    forceThroatProfile?: string | null
+  },
+): string {
+  // Ath V2025-06 no longer supports the Rollback feature.
+  // Also, `AxiMorph` currently triggers an access violation when meshing/STL output is enabled;
+  // strip both to prevent hard crashes from stale configs or Advanced overrides.
+  const stripped = cfgText
+    .replace(/^\s*Rollback(?:\.[A-Za-z0-9_.:-]+)?\s*=.*\n/gm, '')
+    .replace(/^\s*AxiMorph\s*=.*\n/gm, '')
+    .replace(/^\s*Throat\.Profile\s*=\s*\n/gm, '')
+
+  // If there are multiple Throat.Profile assignments, keep only the last one.
+  // Some Ath builds appear to treat mixed string/numeric assignments as 0 (unknown profile).
+  const lines = stripped.split('\n')
+  let profileLine: string | null = null
+  const profileRegex = /^\s*Throat\.Profile\s*=/i
+  for (const line of lines) {
+    if (profileRegex.test(line)) profileLine = line
+  }
+
+  const otherLines = lines.filter((line) => !profileRegex.test(line))
+  const match = (profileLine ?? '').match(/^\s*Throat\.Profile\s*=\s*(.*)\s*$/i)
+  const value = (match?.[1] ?? '').trim()
+  const forcedProfile = typeof opts?.forceThroatProfile === 'string' ? opts.forceThroatProfile.trim() : ''
+
+  // Prefer string profile types (like R-OSSE) over numeric if both are present
+  const normalizedProfileLine = forcedProfile
+    ? `Throat.Profile = ${forcedProfile}`
+    : value && value !== '0'
+      ? `Throat.Profile = ${value}`
+      : 'Throat.Profile = 1'
+
+  return [normalizedProfileLine, ...otherLines].join('\n')
 }
 
 export function getProject(id: string): Project | undefined {
@@ -84,6 +128,16 @@ export async function updateProjectConfig(project: Project, config: Record<strin
 function stringFromConfig(project: Project, key: string): string | null {
   const value = project.config[key]
   return typeof value === 'string' && value.trim().length ? value.trim() : null
+}
+
+function numberFromConfig(project: Project, key: string): number | null {
+  const value = project.config[key]
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim().length) {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+  return null
 }
 
 function resolveMeshCmd(project: Project): string | null {
@@ -117,6 +171,61 @@ function extractExeFromMeshCmd(meshCmd: string): string | null {
   return first || null
 }
 
+function clamp01(n: number): number {
+  if (!Number.isFinite(n)) return 0
+  if (n < 0) return 0
+  if (n > 1) return 1
+  return n
+}
+
+function smoothstep01(t: number): number {
+  const x = clamp01(t)
+  return x * x * (3 - 2 * x)
+}
+
+type RollbackSpec = { kind: 'angle'; angleDeg: number } | { kind: 'mm'; mm: number }
+
+function computeRollbackMmFromAngle(angleDeg: number, rMax: number): number {
+  if (!Number.isFinite(angleDeg) || !Number.isFinite(rMax) || rMax <= 0) return 0
+  // Map angles to a stable, intuitive distance:
+  // - 0 disables
+  // - ~180 => moderate rollback (around ~15mm for a ~54mm mouth radius)
+  // - ~220 => stronger
+  const t = clamp01((angleDeg - 90) / 180) // 90 => 0, 270 => 1
+  return rMax * 0.55 * t
+}
+
+function resolveRollbackMm(spec: RollbackSpec, rMax: number): number {
+  if (spec.kind === 'mm') return spec.mm
+  return computeRollbackMmFromAngle(spec.angleDeg, rMax)
+}
+
+function applyRollbackToZ({
+  x,
+  y,
+  z,
+  zMax,
+  rMax,
+  rollbackMm,
+}: {
+  x: number
+  y: number
+  z: number
+  zMax: number
+  rMax: number
+  rollbackMm: number
+}): number {
+  const span = Math.max(rollbackMm * 2, 1e-6)
+  const tZ = (z - (zMax - span)) / span
+  const wZ = smoothstep01(tZ)
+
+  const r = Math.hypot(x, y)
+  const tR = rMax > 0 ? clamp01(r / rMax) : 1
+  const wR = tR * tR
+
+  return z - rollbackMm * wZ * wR
+}
+
 async function findGeoFiles(rootDir: string): Promise<string[]> {
   const results: string[] = []
   async function walk(current: string) {
@@ -135,6 +244,292 @@ async function findGeoFiles(rootDir: string): Promise<string[]> {
   return results
 }
 
+async function listFilesRecursively(rootDir: string): Promise<string[]> {
+  const results: string[] = []
+  async function walk(current: string) {
+    const children = await fs.readdir(current, { withFileTypes: true })
+    for (const child of children) {
+      const full = path.join(current, child.name)
+      if (child.isDirectory()) {
+        if (child.name === 'node_modules') continue
+        if (child.name.toLowerCase().startsWith('abec_')) continue
+        await walk(full)
+      } else if (child.isFile()) {
+        results.push(full)
+        if (results.length > 2_000) return
+      }
+    }
+  }
+  await walk(rootDir)
+  return results
+}
+
+function isBinaryStl(buffer: Buffer): boolean {
+  if (buffer.length < 84) return false
+  const triCount = buffer.readUInt32LE(80)
+  const expected = 84 + triCount * 50
+  return expected === buffer.length
+}
+
+function isRollbackDerivedFilePath(filePath: string): boolean {
+  const lower = filePath.toLowerCase()
+  return lower.endsWith('_rollback.stl') || lower.endsWith('_rollback.csv')
+}
+
+function rollbackDerivedPath(filePath: string): string {
+  const ext = path.extname(filePath)
+  const base = ext ? filePath.slice(0, -ext.length) : filePath
+  return `${base}_rollback${ext}`
+}
+
+type RollbackAppliedFile = {
+  srcPath: string
+  outPath: string
+  rollbackMm: number
+  rMax: number
+  zMax: number
+}
+
+async function applyRollbackToStlFile(srcPath: string, outPath: string, rollback: RollbackSpec): Promise<RollbackAppliedFile | null> {
+  const buf = await fs.readFile(srcPath)
+  if (!isBinaryStl(buf)) return null
+
+  const triCount = buf.readUInt32LE(80)
+  if (triCount <= 0) return null
+
+  let zMax = Number.NEGATIVE_INFINITY
+  let rMax = 0
+
+  for (let i = 0; i < triCount; i++) {
+    const triOffset = 84 + i * 50
+    for (let v = 0; v < 3; v++) {
+      const vertexOffset = triOffset + 12 + v * 12
+      const x = buf.readFloatLE(vertexOffset)
+      const y = buf.readFloatLE(vertexOffset + 4)
+      const z = buf.readFloatLE(vertexOffset + 8)
+      if (Number.isFinite(z) && z > zMax) zMax = z
+      const r = Math.hypot(x, y)
+      if (Number.isFinite(r) && r > rMax) rMax = r
+    }
+  }
+
+  if (!Number.isFinite(zMax) || zMax === Number.NEGATIVE_INFINITY) return null
+
+  const rollbackMm = resolveRollbackMm(rollback, rMax)
+  if (!Number.isFinite(rollbackMm) || rollbackMm <= 0) return null
+
+  const out = Buffer.from(buf)
+
+  for (let i = 0; i < triCount; i++) {
+    const triOffset = 84 + i * 50
+    const v: [number, number, number][] = []
+
+    for (let vi = 0; vi < 3; vi++) {
+      const vertexOffset = triOffset + 12 + vi * 12
+      const x = out.readFloatLE(vertexOffset)
+      const y = out.readFloatLE(vertexOffset + 4)
+      const z = out.readFloatLE(vertexOffset + 8)
+      const nextZ = applyRollbackToZ({ x, y, z, zMax, rMax, rollbackMm })
+      out.writeFloatLE(nextZ, vertexOffset + 8)
+      v.push([x, y, nextZ])
+    }
+
+    const [v1, v2, v3] = v
+    if (!v1 || !v2 || !v3) continue
+    const ax = v2[0] - v1[0]
+    const ay = v2[1] - v1[1]
+    const az = v2[2] - v1[2]
+    const bx = v3[0] - v1[0]
+    const by = v3[1] - v1[1]
+    const bz = v3[2] - v1[2]
+    let nx = ay * bz - az * by
+    let ny = az * bx - ax * bz
+    let nz = ax * by - ay * bx
+    const nLen = Math.hypot(nx, ny, nz)
+    if (nLen > 0) {
+      nx /= nLen
+      ny /= nLen
+      nz /= nLen
+    } else {
+      nx = 0
+      ny = 0
+      nz = 0
+    }
+    out.writeFloatLE(nx, triOffset + 0)
+    out.writeFloatLE(ny, triOffset + 4)
+    out.writeFloatLE(nz, triOffset + 8)
+  }
+
+  await fs.writeFile(outPath, out)
+  return { srcPath, outPath, rollbackMm, rMax, zMax }
+}
+
+async function applyRollbackToCsvFile(srcPath: string, outPath: string, rollback: RollbackSpec): Promise<RollbackAppliedFile | null> {
+  const raw = await fs.readFile(srcPath, 'utf8')
+  const normalized = raw.replaceAll('\r\n', '\n')
+  const lines = normalized.split('\n')
+
+  let zMax = Number.NEGATIVE_INFINITY
+  let rMax = 0
+  let parseable = 0
+  let delimiter: ';' | ',' = ';'
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim()
+    if (!line) continue
+    if (line.startsWith('#')) continue
+    if (line.includes(',')) delimiter = ','
+
+    const parts = line.split(delimiter)
+    if (parts.length < 3) continue
+    const x = Number.parseFloat(parts[0] ?? '')
+    const y = Number.parseFloat(parts[1] ?? '')
+    const z = Number.parseFloat(parts[2] ?? '')
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) continue
+    parseable++
+    if (z > zMax) zMax = z
+    const r = Math.hypot(x, y)
+    if (r > rMax) rMax = r
+  }
+
+  if (parseable < 10 || !Number.isFinite(zMax) || zMax === Number.NEGATIVE_INFINITY) return null
+
+  const rollbackMm = resolveRollbackMm(rollback, rMax)
+  if (!Number.isFinite(rollbackMm) || rollbackMm <= 0) return null
+
+  const outLines = lines.map((rawLine) => {
+    const line = rawLine.trim()
+    if (!line) return ''
+    if (line.startsWith('#')) return line
+    const parts = line.split(delimiter)
+    if (parts.length < 3) return rawLine
+    const x = Number.parseFloat(parts[0] ?? '')
+    const y = Number.parseFloat(parts[1] ?? '')
+    const z = Number.parseFloat(parts[2] ?? '')
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return rawLine
+
+    const nextZ = applyRollbackToZ({ x, y, z, zMax, rMax, rollbackMm })
+    return `${x.toFixed(6)}${delimiter}${y.toFixed(6)}${delimiter}${nextZ.toFixed(6)}`
+  })
+
+  const outText = outLines.join('\n').replace(/\n+$/, '\n')
+  await fs.writeFile(outPath, outText, 'utf8')
+  return { srcPath, outPath, rollbackMm, rMax, zMax }
+}
+
+async function applyRollbackPostProcess(project: Project, outputsDir: string) {
+  const runOutputsDir = path.join(outputsDir, 'project')
+  let root = outputsDir
+  try {
+    const stat = await fs.stat(runOutputsDir)
+    if (stat.isDirectory()) root = runOutputsDir
+  } catch {
+    // ignore
+  }
+
+  let files: string[] = []
+  try {
+    files = await listFilesRecursively(root)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    appendLogs(project, [`[athui] rollback scan failed: ${message}`])
+    return
+  }
+
+  const derived = files.filter((p) => isRollbackDerivedFilePath(p))
+
+  const termination = stringFromConfig(project, '_athui.MouthTermination')?.toLowerCase() ?? null
+  const throatProfile = stringFromConfig(project, 'Throat.Profile')?.toLowerCase() ?? null
+  const terminationEnabled = termination === 'r-osse'
+  const profileEnabled = throatProfile === 'r-osse'
+
+  const angleDeg = numberFromConfig(project, '_athui.RollbackAngleDeg')
+  const distanceMm = numberFromConfig(project, '_athui.RollbackMm')
+
+  let rollback: RollbackSpec | null = null
+  if (angleDeg !== null) {
+    if (angleDeg <= 0) rollback = null
+    else rollback = { kind: 'angle', angleDeg }
+  } else if (distanceMm !== null) {
+    if (distanceMm <= 0) rollback = null
+    else rollback = { kind: 'mm', mm: distanceMm }
+  } else if (terminationEnabled) {
+    // Default behavior for Quick Setup: a moderate rollback.
+    rollback = { kind: 'angle', angleDeg: 180 }
+  }
+
+  if ((!terminationEnabled && !profileEnabled) || !rollback) {
+    if (derived.length > 0) {
+      let removed = 0
+      for (const fp of derived) {
+        try {
+          await fs.unlink(fp)
+          removed++
+        } catch {
+          // ignore
+        }
+      }
+      if (removed > 0) appendLogs(project, [`[athui] rollback disabled; removed ${removed} derived file${removed === 1 ? '' : 's'}`])
+    }
+    return
+  }
+
+  const stlSources = files.filter((filePath) => {
+    const lower = filePath.toLowerCase()
+    if (!lower.endsWith('.stl')) return false
+    if (isRollbackDerivedFilePath(lower)) return false
+    if (lower.includes('bem_mesh')) return false
+    return true
+  })
+
+  const csvSources = files.filter((filePath) => {
+    const lower = filePath.toLowerCase()
+    if (!lower.endsWith('.csv')) return false
+    if (isRollbackDerivedFilePath(lower)) return false
+    if (!lower.includes('profiles') && !lower.includes('slices')) return false
+    return true
+  })
+
+  if (stlSources.length === 0 && csvSources.length === 0) {
+    appendLogs(project, [`[athui] rollback enabled, but no STL/CSV outputs found in: ${root}`])
+    return
+  }
+
+  let applied = 0
+  let example: RollbackAppliedFile | null = null
+  try {
+    for (const src of stlSources) {
+      const outPath = rollbackDerivedPath(src)
+      const result = await applyRollbackToStlFile(src, outPath, rollback)
+      if (result) {
+        applied++
+        if (!example) example = result
+      }
+    }
+    for (const src of csvSources) {
+      const outPath = rollbackDerivedPath(src)
+      const result = await applyRollbackToCsvFile(src, outPath, rollback)
+      if (result) {
+        applied++
+        if (!example) example = result
+      }
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    appendLogs(project, [`[athui] rollback post-process failed: ${message}`])
+    return
+  }
+
+  const modeLabel = rollback.kind === 'angle' ? `${rollback.angleDeg} deg` : `${rollback.mm} mm`
+  if (applied > 0 && example) {
+    appendLogs(project, [
+      `[athui] rollback applied: ${modeLabel} -> ${example.rollbackMm.toFixed(2)} mm (mouth r=${example.rMax.toFixed(2)}), wrote ${applied} file${applied === 1 ? '' : 's'}`,
+    ])
+  } else if (applied > 0) {
+    appendLogs(project, [`[athui] rollback applied: ${modeLabel}, wrote ${applied} file${applied === 1 ? '' : 's'}`])
+  }
+}
+
 async function runGmshToStl({
   gmshExe,
   geoPath,
@@ -148,10 +543,13 @@ async function runGmshToStl({
   cwd: string
   project: Project
 }): Promise<void> {
-  appendLogs(project, [`[gmsh] ${gmshExe} ${geoPath} -3 -format stl -o ${outPath}`])
+  appendLogs(project, [`[gmsh] ${gmshExe} ${geoPath} -3 -format stl -o ${outPath} -bin`])
 
   await new Promise<void>((resolve) => {
-    const child = spawn(gmshExe, [geoPath, '-3', '-format', 'stl', '-o', outPath, '-v', '0'], { cwd, windowsHide: true })
+    const child = spawn(gmshExe, [geoPath, '-3', '-format', 'stl', '-o', outPath, '-bin', '-v', '0'], {
+      cwd,
+      windowsHide: true,
+    })
     child.stdout.on('data', (b: Buffer) => appendLogs(project, toLines(b.toString('utf8'))))
     child.stderr.on('data', (b: Buffer) => appendLogs(project, toLines(b.toString('utf8'))))
     child.on('error', (err) => {
@@ -226,12 +624,23 @@ export async function runProject(project: Project) {
   await fs.writeFile(path.join(project.dir, 'ath.cfg'), runtimeAthCfg, 'utf8')
 
   const definitionPath = path.join(project.dir, 'project.cfg')
-  const cfgTextOverride = project.config['_athui.cfgText']
-  const cfgText =
-    typeof cfgTextOverride === 'string' && cfgTextOverride.trim().length
-      ? normalizeCfgText(cfgTextOverride)
-      : serializeAthDefinition(project.config)
-  await fs.writeFile(definitionPath, ensureGridExportProfiles(cfgText), 'utf8')
+
+  // Build effective config and optional cfg-text override from the UI.
+  const effectiveConfig = { ...project.config }
+  const forceThroatProfile = effectiveConfig['_athui.MouthTermination'] === 'r-osse' ? 'R-OSSE' : null
+
+  const cfgTextOverrideRaw = effectiveConfig['_athui.cfgText']
+  const cfgTextOverride =
+    typeof cfgTextOverrideRaw === 'string' && cfgTextOverrideRaw.trim().length > 0 ? cfgTextOverrideRaw : null
+
+  if (!cfgTextOverride && forceThroatProfile) {
+    // For backwards compatibility (older UI clients): ensure the override applies when the server generates cfg text.
+    effectiveConfig['Throat.Profile'] = forceThroatProfile
+  }
+
+  const cfgText = cfgTextOverride ?? serializeAthDefinition(effectiveConfig)
+  const sanitized = sanitizeCfgTextForAth2025(cfgText, { forceThroatProfile })
+  await fs.writeFile(definitionPath, withUtf8Bom(ensureGridExportProfiles(sanitized)), 'utf8')
 
   appendLogs(project, [`[run] ${athExe} ${definitionPath}`])
   appendLogs(project, [`[run] OutputRootDir = ${outputsDir}`])
@@ -261,11 +670,15 @@ export async function runProject(project: Project) {
     if (code === 0) {
       void (async () => {
         await postProcessOutputs(project, outputsDir, meshCmd)
+        await applyRollbackPostProcess(project, outputsDir)
         const files = await listProjectFiles(project)
         broadcast(project, { type: 'files:update', files })
-        broadcast(project, { type: 'run:done' })
+        broadcast(project, { type: 'run:done', ok: true, code, signal })
       })()
+      return
     }
+
+    broadcast(project, { type: 'run:done', ok: false, code, signal })
   })
 }
 

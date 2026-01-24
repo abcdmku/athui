@@ -13,6 +13,7 @@ type StudioState = {
 
   values: Record<string, unknown>
   setValue: (key: string, value: unknown) => void
+  setValues: (updates: Record<string, unknown>) => void
   dirty: boolean
   setDirty: (dirty: boolean) => void
 
@@ -57,6 +58,14 @@ export const useStudioStore = create<StudioState>((set) => ({
       values: {
         ...s.values,
         [key]: value,
+      },
+    })),
+  setValues: (updates) =>
+    set((s) => ({
+      dirty: true,
+      values: {
+        ...s.values,
+        ...updates,
       },
     })),
   dirty: false,
