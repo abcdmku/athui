@@ -1,0 +1,677 @@
+:root {
+  color-scheme: dark;
+  --bg: #0b1020;
+  --panel: rgba(255, 255, 255, 0.06);
+  --panel-2: rgba(255, 255, 255, 0.1);
+  --text: rgba(255, 255, 255, 0.92);
+  --muted: rgba(255, 255, 255, 0.50);
+  --border: rgba(255, 255, 255, 0.12);
+  --focus: #7dd3fc;
+  --accent: #22d3ee;
+  --danger: #fb7185;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji",
+    "Segoe UI Emoji";
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
+  background: radial-gradient(1200px 800px at 10% 10%, rgba(34, 211, 238, 0.12), transparent 60%),
+    radial-gradient(1000px 600px at 85% 20%, rgba(125, 211, 252, 0.08), transparent 55%),
+    linear-gradient(180deg, #070a14, #0b1020);
+  color: var(--text);
+  overflow: hidden;
+}
+
+a {
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* ===== Scrollbar styling ===== */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* ===== App Shell ===== */
+.app-shell {
+  display: grid;
+  grid-template-rows: 40px 1fr;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ===== Header Bar ===== */
+.header-bar {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.30);
+  backdrop-filter: blur(12px);
+  z-index: 10;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 650;
+  font-size: 14px;
+  letter-spacing: 0.3px;
+}
+
+.header-center {
+  display: flex;
+  justify-content: center;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* Segmented control */
+.segmented {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.segmented button {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  padding: 4px 14px;
+  font-size: 12px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background 100ms, color 100ms;
+}
+
+.segmented button:not(:last-child) {
+  border-right: 1px solid var(--border);
+}
+
+.segmented button.active {
+  background: rgba(34, 211, 238, 0.15);
+  color: var(--accent);
+}
+
+.segmented button:hover:not(.active) {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* Dirty dot */
+.dirty-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.dirty-dot.dirty {
+  background: var(--danger);
+}
+.dirty-dot.clean {
+  background: #4ade80;
+}
+
+/* ===== Dashboard Grid ===== */
+.dashboard {
+  display: grid;
+  grid-template-columns: 1fr 1.5fr;
+  grid-template-rows: 1.2fr 1fr;
+  min-height: 0;
+  overflow: hidden;
+  gap: 1px;
+  background: var(--border);
+}
+
+/* ===== Quadrant Panels ===== */
+.quadrant {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  background: rgba(5, 8, 18, 0.85);
+}
+
+.quad-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.quad-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--muted);
+}
+
+.quad-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 10px;
+}
+
+.quad-body-nopad {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+/* ===== Section Divider ===== */
+.section-divider {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--muted);
+  padding: 10px 0 4px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  margin-bottom: 4px;
+}
+
+/* ===== Compact Fields ===== */
+.field-row {
+  display: grid;
+  grid-template-columns: 1fr 140px;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 2px 0;
+}
+
+.field-row-wide {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 4px;
+  padding: 2px 0;
+}
+
+.field-label {
+  font-size: 13px;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 28px;
+}
+
+.field-label .units {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* ===== Inputs (compact) ===== */
+.input,
+.select,
+.textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.22);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 13px;
+  height: 32px;
+}
+
+.input:focus,
+.select:focus,
+.textarea:focus {
+  border-color: rgba(34, 211, 238, 0.4);
+  outline: none;
+  box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.15);
+}
+
+.textarea {
+  min-height: 60px;
+  height: auto;
+  resize: vertical;
+}
+
+.select {
+  cursor: pointer;
+}
+
+.errorText {
+  color: var(--danger);
+  font-size: 11px;
+  margin-top: 2px;
+}
+
+/* ===== Buttons ===== */
+.btn {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  touch-action: manipulation;
+  white-space: nowrap;
+}
+
+.btn:hover {
+  background: var(--panel-2);
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  height: 32px;
+  padding: 4px 16px;
+  border-color: rgba(34, 211, 238, 0.35);
+  background: rgba(34, 211, 238, 0.14);
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.btn-primary:hover {
+  background: rgba(34, 211, 238, 0.25);
+}
+
+.btn-icon {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  font-size: 14px;
+}
+
+/* ===== Toggle Buttons (Type Round/Rect) ===== */
+.toggle-group {
+  display: flex;
+  gap: 4px;
+}
+
+.toggle-btn {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  padding: 4px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: background 100ms, color 100ms, border-color 100ms;
+}
+
+.toggle-btn.active {
+  border-color: rgba(34, 211, 238, 0.4);
+  background: rgba(34, 211, 238, 0.12);
+  color: var(--accent);
+}
+
+.toggle-btn:hover:not(.active) {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* ===== Coverage Preset Chips ===== */
+.chip-row {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  padding: 2px 0;
+}
+
+.chip {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  padding: 2px 10px;
+  border-radius: 12px;
+  cursor: pointer;
+  font-size: 11px;
+  height: 24px;
+  transition: background 100ms, color 100ms, border-color 100ms;
+}
+
+.chip:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+}
+
+.chip.active {
+  border-color: rgba(34, 211, 238, 0.4);
+  background: rgba(34, 211, 238, 0.12);
+  color: var(--accent);
+}
+
+/* ===== Throat Preset Buttons ===== */
+.preset-row {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.preset-btn {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  padding: 2px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 11px;
+  height: 28px;
+  transition: background 100ms, color 100ms, border-color 100ms;
+}
+
+.preset-btn.active {
+  border-color: rgba(34, 211, 238, 0.4);
+  background: rgba(34, 211, 238, 0.12);
+  color: var(--accent);
+}
+
+.preset-btn:hover:not(.active) {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* ===== Inline Tabs ===== */
+.tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.tab-btn {
+  appearance: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition: color 100ms, border-color 100ms;
+}
+
+.tab-btn:hover {
+  color: var(--text);
+}
+
+.tab-btn.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.tab-content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 10px;
+}
+
+/* ===== Info Tooltip Button ===== */
+.info-btn {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.2);
+  color: var(--muted);
+  cursor: help;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.info-btn:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* ===== Log Box ===== */
+.log-box {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  line-height: 1.45;
+  color: var(--text);
+  padding: 8px;
+}
+
+/* ===== Muted ===== */
+.muted {
+  color: var(--muted);
+}
+
+/* ===== File list ===== */
+.file-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 12px;
+}
+
+.file-item:last-child {
+  border-bottom: none;
+}
+
+.file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.file-size {
+  color: var(--muted);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.file-dl {
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.file-dl:hover {
+  text-decoration: underline;
+}
+
+/* ===== Preview floating badge ===== */
+.preview-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 11px;
+  color: var(--muted);
+  z-index: 5;
+  pointer-events: none;
+}
+
+/* ===== Profile SVG ===== */
+.profileSvg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  background: rgba(0, 0, 0, 0.14);
+}
+
+.profileAxis {
+  stroke: rgba(255, 255, 255, 0.22);
+  stroke-width: 1;
+}
+
+.profileLine {
+  stroke: rgba(34, 211, 238, 0.9);
+  stroke-width: 2;
+}
+
+/* ===== Checkbox compact ===== */
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 2px 0;
+}
+
+.checkbox-row input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  flex-shrink: 0;
+}
+
+.checkbox-row label {
+  font-size: 13px;
+  cursor: pointer;
+}
+
+/* ===== Folder input ===== */
+.folder-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px;
+}
+
+/* ===== OS-SE 2x2 grid ===== */
+.param-grid-2x2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 8px;
+}
+
+.param-grid-2x2 .field-mini {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.param-grid-2x2 .field-mini label {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* ===== Card (reused for some sub-panels) ===== */
+.card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  backdrop-filter: blur(6px);
+}
+
+.cardHeader {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cardHeader h2 {
+  font-size: 12px;
+  margin: 0;
+}
+
+.cardBody {
+  padding: 8px 10px;
+}
+
+/* ===== Placeholder ===== */
+.placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+  padding: 20px;
+}
+
+/* ===== Mesh Quality 2-col grid ===== */
+.mesh-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 10px;
+}
+
+/* ===== Simulation compact grid ===== */
+.sim-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 10px;
+}
+
+/* ===== Horn Parts Editor overrides for compact ===== */
+.horn-parts-compact .card {
+  margin-bottom: 6px;
+}

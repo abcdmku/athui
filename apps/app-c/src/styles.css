@@ -1,0 +1,592 @@
+:root {
+  color-scheme: dark;
+  --bg: #0b1020;
+  --panel: rgba(255, 255, 255, 0.06);
+  --panel-2: rgba(255, 255, 255, 0.1);
+  --text: rgba(255, 255, 255, 0.92);
+  --muted: rgba(255, 255, 255, 0.66);
+  --border: rgba(255, 255, 255, 0.12);
+  --focus: #7dd3fc;
+  --accent: #22d3ee;
+  --danger: #fb7185;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji",
+    "Segoe UI Emoji";
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
+  background: radial-gradient(1200px 800px at 10% 10%, rgba(34, 211, 238, 0.15), transparent 60%),
+    radial-gradient(1000px 600px at 85% 20%, rgba(125, 211, 252, 0.12), transparent 55%),
+    linear-gradient(180deg, #070a14, #0b1020);
+  color: var(--text);
+}
+
+a {
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* ── App Shell ── */
+.appShell {
+  display: grid;
+  grid-template-rows: 44px 1fr 36px;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ── Header ── */
+.header {
+  display: grid;
+  grid-template-columns: 160px 1fr 160px;
+  align-items: center;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(10px);
+}
+
+.headerTitle {
+  font-weight: 650;
+  font-size: 14px;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+}
+
+.headerCenter {
+  display: flex;
+  justify-content: center;
+  gap: 0;
+}
+
+.headerRight {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+/* ── Tab Bar ── */
+.mainTab {
+  width: 120px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  touch-action: manipulation;
+  border-bottom: 2px solid transparent;
+  padding: 0 4px;
+  transition: color 120ms, border-color 120ms;
+}
+
+.mainTab:hover {
+  color: var(--text);
+}
+
+.mainTab[aria-selected='true'] {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.mainTab.dimmed {
+  opacity: 0.45;
+}
+
+.mainTab.dimmed:hover {
+  opacity: 0.7;
+}
+
+.tabStepNum {
+  font-weight: 700;
+  font-size: 12px;
+  opacity: 0.5;
+}
+
+/* ── Simple/Advanced Toggle ── */
+.pillToggle {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.pillToggle button {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: background 120ms, color 120ms;
+}
+
+.pillToggle button[aria-pressed='true'] {
+  background: rgba(34, 211, 238, 0.18);
+  color: var(--text);
+}
+
+.pillToggle button:hover {
+  color: var(--text);
+}
+
+/* ── Tab Content (Split View) ── */
+.tabContent {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.splitLeft {
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  border-right: 1px solid var(--border);
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.14);
+}
+
+.splitRight {
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.08);
+}
+
+/* ── Section Headers (collapsible) ── */
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+}
+
+.sectionHeader h3 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.sectionToggle {
+  font-size: 10px;
+  color: var(--muted);
+  transition: transform 150ms;
+}
+
+.sectionToggle.open {
+  transform: rotate(90deg);
+}
+
+summary {
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+summary::-webkit-details-marker {
+  display: none;
+}
+
+/* ── Field Layout ── */
+.fieldRow {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  gap: 2px;
+}
+
+.fieldLabel {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fieldLabelUnits {
+  color: var(--muted);
+  font-size: 11px;
+  margin-left: 4px;
+}
+
+.fieldInput {
+  width: 140px;
+  flex-shrink: 0;
+}
+
+/* ── Inputs ── */
+.input,
+.select,
+.textarea {
+  width: 100%;
+  height: 30px;
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.18);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 0 8px;
+  font-size: 13px;
+}
+
+.select {
+  padding-right: 20px;
+}
+
+.textarea {
+  height: auto;
+  min-height: 60px;
+  resize: vertical;
+  padding: 6px 8px;
+}
+
+.input:focus,
+.select:focus,
+.textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.input[aria-invalid='true'],
+.select[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+
+.errorText {
+  color: var(--danger);
+  font-size: 11px;
+  margin-top: 2px;
+}
+
+/* ── Chip / Preset Buttons ── */
+.chipRow {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.chip {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--muted);
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 500;
+  touch-action: manipulation;
+  transition: background 100ms, color 100ms;
+}
+
+.chip:hover {
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.chip.active {
+  background: rgba(34, 211, 238, 0.14);
+  border-color: rgba(34, 211, 238, 0.35);
+  color: var(--text);
+}
+
+/* ── Toggle Buttons ── */
+.toggleGroup {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.toggleBtn {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 100ms, color 100ms;
+}
+
+.toggleBtn:not(:last-child) {
+  border-right: 1px solid var(--border);
+}
+
+.toggleBtn.active {
+  background: rgba(34, 211, 238, 0.14);
+  color: var(--text);
+}
+
+/* ── 2-column grid for mesh params ── */
+.twoColGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 12px;
+}
+
+/* ── Status Bar ── */
+.statusBar {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  padding: 0 14px;
+  border-top: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(10px);
+  font-size: 12px;
+}
+
+.statusLeft {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.statusCenter {
+  display: flex;
+  justify-content: center;
+  color: var(--muted);
+}
+
+.statusRight {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+}
+
+.runBtn {
+  appearance: none;
+  border: 1px solid rgba(34, 211, 238, 0.35);
+  background: rgba(34, 211, 238, 0.14);
+  color: var(--accent);
+  padding: 4px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  touch-action: manipulation;
+}
+
+.runBtn:hover {
+  background: rgba(34, 211, 238, 0.25);
+}
+
+.runBtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.dirtyBadge {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.dirtyBadge.clean {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.connDot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #4ade80;
+}
+
+.connDot.disconnected {
+  background: var(--danger);
+}
+
+.btn {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  touch-action: manipulation;
+}
+
+.btn:hover {
+  background: var(--panel-2);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ── Log Box ── */
+.logBox {
+  padding: 10px 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  line-height: 1.45;
+  height: 100%;
+  overflow: auto;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+/* ── Profile SVG ── */
+.profileSvg {
+  width: 100%;
+  height: 100%;
+  min-height: 280px;
+  display: block;
+  background: rgba(0, 0, 0, 0.14);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.profileAxis {
+  stroke: rgba(255, 255, 255, 0.22);
+  stroke-width: 1;
+}
+
+.profileLine {
+  stroke: rgba(34, 211, 238, 0.9);
+  stroke-width: 2;
+}
+
+/* ── Files List ── */
+.fileItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  gap: 8px;
+}
+
+.fileItem:last-child {
+  border-bottom: 0;
+}
+
+.fileName {
+  font-size: 13px;
+  word-break: break-all;
+}
+
+.fileSize {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* ── Checkbox field ── */
+.checkboxRow {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  gap: 8px;
+}
+
+.checkboxRow input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+
+/* ── Info Button ── */
+.infoBtn {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.18);
+  color: var(--muted);
+  cursor: help;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  touch-action: manipulation;
+  flex-shrink: 0;
+}
+
+.infoBtn:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* ── Folder Row ── */
+.folderRow {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px;
+  align-items: center;
+}
+
+/* ── Section Spacing ── */
+.sectionBlock {
+  margin-bottom: 8px;
+}
+
+.sectionBlock:last-child {
+  margin-bottom: 0;
+}
+
+/* ── Card (for HornParts) ── */
+.card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.cardHeader {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cardHeader h2 {
+  font-size: 12px;
+  margin: 0;
+  letter-spacing: 0.2px;
+}
+
+.cardBody {
+  padding: 8px 10px;
+}

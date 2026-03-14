@@ -6,6 +6,10 @@
   ],
   "scripts": {
     "dev": "concurrently \"npm -w apps/server run dev\" \"npm -w apps/studio run dev\"",
+    "dev:a": "concurrently \"npm -w apps/server run dev\" \"npm -w apps/app-a run dev\"",
+    "dev:b": "concurrently \"npm -w apps/server run dev\" \"npm -w apps/app-b run dev\"",
+    "dev:c": "concurrently \"npm -w apps/server run dev\" \"npm -w apps/app-c run dev\"",
+    "dev:all": "concurrently \"npm -w apps/server run dev\" \"npm -w apps/studio run dev\" \"npm -w apps/app-a run dev\" \"npm -w apps/app-b run dev\" \"npm -w apps/app-c run dev\"",
     "build": "npm -w apps/server run build && npm -w apps/studio run build",
     "start": "npm -w apps/server run start",
     "setup:gmsh": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-gmsh.ps1",
