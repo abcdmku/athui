@@ -211,6 +211,7 @@ function buildSimpleRectThroatLines(values: Record<string, unknown>): { lines: s
   const throatAngle = asExpr(values['Throat.Angle']) ?? '7'
   const coverageH = Math.min(160, Math.max(20, asNumber(values[SIMPLE_RECT_COVERAGE_H_KEY]) ?? 90))
   const coverageV = Math.min(160, Math.max(20, asNumber(values[SIMPLE_RECT_COVERAGE_V_KEY]) ?? 60))
+  const partSegments = Math.max(16, Math.round(asNumber(values['Mesh.LengthSegments']) ?? 16))
   const osK = asExpr(values['OS.k']) ?? '1'
   const termS = asExpr(values['Term.s']) ?? '0.5'
   const termQ = asExpr(values['Term.q']) ?? '0.996'
@@ -233,7 +234,7 @@ function buildSimpleRectThroatLines(values: Record<string, unknown>): { lines: s
   lines.push('}')
   lines.push('Horn.Part:1 = {')
   lines.push('  L = 1')
-  lines.push('  Segments = 16')
+  lines.push(`  Segments = ${partSegments}`)
   lines.push('  H = {')
   lines.push(`    r0 = ${width / 2}`)
   lines.push(`    a0 = ${throatAngle}`)
@@ -359,6 +360,26 @@ function buildHornAdapterLines(values: Record<string, unknown>): { lines: string
   return { lines, keysToSkip }
 }
 
+function shouldAlwaysEmitAdvanced(spec: ItemSpec, values: Record<string, unknown>, formatted: string): boolean {
+  if (formatted === null) return false
+
+  switch (spec.key) {
+    case 'GCurve.Dist':
+    case 'GCurve.Width':
+    case 'GCurve.AspectRatio':
+    case 'GCurve.SE.n':
+    case 'GCurve.SF':
+    case 'GCurve.Rot':
+      return isDefined(values['GCurve.Type'])
+    case 'Morph.FixedPart':
+    case 'Morph.Rate':
+    case 'Morph.AllowShrinkage':
+      return asNumber(values['Morph.TargetShape']) !== null && asNumber(values['Morph.TargetShape']) !== 0
+    default:
+      return false
+  }
+}
+
 export function buildProjectCfgText(
   schema: AthUiSchema,
   values: Record<string, unknown>,
@@ -388,8 +409,12 @@ export function buildProjectCfgText(
     // Quick Setup should still serialize advanced keys when the user (or the UI) changes them away from defaults.
     // This keeps Quick Setup runs simple, while still allowing composed/derived flows (e.g. the horn designer).
     if (!opts.includeAdvanced && spec.ui.advanced) {
+      if (shouldAlwaysEmitAdvanced(spec, values, formatted)) {
+        // Keep guide/morph helper fields when the governing feature is enabled.
+      } else {
       const defaultFormatted = spec.default !== undefined ? formatCfgValue(spec, spec.default) : null
       if (defaultFormatted === formatted) return
+      }
     }
 
     if (emitted.has(spec.key)) return

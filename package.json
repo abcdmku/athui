@@ -14,7 +14,8 @@
     "start": "npm -w apps/server run start",
     "setup:gmsh": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-gmsh.ps1",
     "validate:ui-inputs": "tsx scripts/validate-ui-inputs.ts",
-    "validate:ui-effects": "tsx scripts/run-ui-input-matrix.ts --section=geometry --max=12"
+    "validate:ui-effects": "tsx scripts/run-ui-input-matrix.ts --section=geometry --max=12",
+    "validate:rect-guide-quality": "tsx scripts/validate-rect-guide-quality.ts"
   },
   "devDependencies": {
     "concurrently": "^9.1.0",

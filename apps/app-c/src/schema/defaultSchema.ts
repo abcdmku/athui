@@ -495,9 +495,9 @@ export const defaultSchema: AthUiSchema = {
       label: 'Superformula Parameters',
       valueType: 'f[]',
       description: 'Array: a,b,m,n1,n2,n3.',
-      default: [0.95, 0.82, 4, 0.8, 7, 1.9],
+      default: [1, 1, 4, 0.8, 8, 2],
       visibleWhen: [{ key: 'GCurve.Type', op: 'eq', value: 2 }],
-      ui: { widget: 'numberList', placeholder: '0.95,0.82,4,0.8,7,1.9', help: 'Comma-separated: a,b,m,n1,n2,n3.' },
+      ui: { widget: 'numberList', placeholder: '1,1,4,0.8,8,2', help: 'Comma-separated: a,b,m,n1,n2,n3.' },
     },
     'GCurve.Rot': {
       key: 'GCurve.Rot',

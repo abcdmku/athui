@@ -19,10 +19,17 @@ const HornPartsEditor = React.lazy(() =>
 
 type Mode = 'round' | 'rect'
 type SizeMode = 'depth' | 'mouth'
+type GuideType = 0 | 1 | 2
 
 type DesignerState = {
   throatShape: Mode
   mode: Mode
+  guideType: GuideType
+  guideWidthMm: number
+  guideHeightMm: number
+  guideDistPercent: number
+  guideSuperellipseN: number
+  guideSuperformulaText: string
   coverageH: number
   coverageV: number
   sizeMode: SizeMode
@@ -45,9 +52,41 @@ const KEY_SIZE_MODE = '_athui.Designer.SizeMode'
 const KEY_DEPTH = '_athui.Designer.DepthMm'
 const KEY_MOUTH_W = '_athui.Designer.MouthWidthMm'
 const KEY_MOUTH_H = '_athui.Designer.MouthHeightMm'
+const KEY_GUIDE_TYPE = '_athui.Designer.GuideType'
+const KEY_GUIDE_W = '_athui.Designer.GuideWidthMm'
+const KEY_GUIDE_H = '_athui.Designer.GuideHeightMm'
+const KEY_GUIDE_DIST = '_athui.Designer.GuideDistPercent'
+const KEY_GUIDE_SE_N = '_athui.Designer.GuideSEN'
+const KEY_GUIDE_SF = '_athui.Designer.GuideSF'
 const KEY_THROAT_SHAPE = '_athui.Designer.ThroatShape'
 const DEFAULT_RECT_THROAT_WIDTH_MM = 28
 const DEFAULT_RECT_THROAT_HEIGHT_MM = 121.5
+const DEFAULT_GUIDE_SUPERFORMULA_TEXT = '1,1,4,0.8,8,2'
+
+function normalizeGuideType(value: unknown): GuideType {
+  const n = asNumber(value)
+  if (n === 1 || n === 2) return n
+  return 0
+}
+
+function formatNumberListText(value: unknown, fallback = DEFAULT_GUIDE_SUPERFORMULA_TEXT): string {
+  if (Array.isArray(value)) {
+    const parts = value
+      .map((entry) => asNumber(entry))
+      .filter((entry): entry is number => entry !== null)
+      .map((entry) => formatNumber(entry, 3))
+    return parts.length ? parts.join(',') : fallback
+  }
+  if (typeof value === 'string') {
+    const parts = value
+      .split(',')
+      .map((part) => asNumber(part.trim()))
+      .filter((part): part is number => part !== null)
+      .map((part) => formatNumber(part, 3))
+    return parts.length ? parts.join(',') : fallback
+  }
+  return fallback
+}
 
 function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n))
@@ -130,6 +169,7 @@ function deriveDesignerState(values: Record<string, unknown>): DesignerState {
   const inferredMode: Mode = asNumber(values['Morph.TargetShape']) === 1 ? 'rect' : 'round'
   const rawMode: Mode = modeRaw === 'rect' || modeRaw === 'round' ? modeRaw : inferredMode
   const mode: Mode = throatShape === 'rect' ? 'rect' : rawMode
+  const guideType = normalizeGuideType(values[KEY_GUIDE_TYPE] ?? values['GCurve.Type'])
 
   const covFromCfgHalf = parseAngleExprToNumber(values['Coverage.Angle'])
   const fallbackCoverage = covFromCfgHalf !== null ? clamp(covFromCfgHalf * 2, 20, 160) : 90
@@ -147,6 +187,25 @@ function deriveDesignerState(values: Record<string, unknown>): DesignerState {
 
   const targetWFromCfg = asNumber(values['Morph.TargetWidth'])
   const targetHFromCfg = asNumber(values['Morph.TargetHeight'])
+  const gCurveWidthMm = clamp(asNumber(values[KEY_GUIDE_W] ?? values['GCurve.Width']) ?? 68, 1, 2000)
+  const gCurveAspectRatio = clamp(asNumber(values['GCurve.AspectRatio']) ?? 1, 0.05, 20)
+  const gCurveHeightMm = clamp(
+    asNumber(values[KEY_GUIDE_H]) ?? gCurveWidthMm * gCurveAspectRatio,
+    1,
+    2000,
+  )
+  const rawGuideDist = asNumber(values['GCurve.Dist'])
+  const derivedGuideDistPercent =
+    rawGuideDist === null
+      ? 50
+      : rawGuideDist <= 1
+        ? rawGuideDist * 100
+        : depthMm > 1e-6
+          ? (rawGuideDist / depthMm) * 100
+          : 50
+  const guideDistPercent = clamp(asNumber(values[KEY_GUIDE_DIST]) ?? derivedGuideDistPercent, 1, 100)
+  const guideSuperellipseN = clamp(asNumber(values[KEY_GUIDE_SE_N] ?? values['GCurve.SE.n']) ?? 3, 2, 20)
+  const guideSuperformulaText = formatNumberListText(values[KEY_GUIDE_SF] ?? values['GCurve.SF'])
 
   const estimatedBaseW =
     throatShape === 'rect'
@@ -187,6 +246,12 @@ function deriveDesignerState(values: Record<string, unknown>): DesignerState {
   return {
     throatShape,
     mode,
+    guideType,
+    guideWidthMm: gCurveWidthMm,
+    guideHeightMm: gCurveHeightMm,
+    guideDistPercent,
+    guideSuperellipseN,
+    guideSuperformulaText,
     coverageH,
     coverageV: usesDualCoverage ? coverageV : coverageH,
     sizeMode,
@@ -211,9 +276,20 @@ function buildCoverageExprDeg(fullH: number, fullV: number): string {
 }
 
 function computeDerived(s: DesignerState): { depthMm: number; mouthWidthMm: number; mouthHeightMm: number } {
+  const guideActive = s.guideType !== 0
+  const throatMinWidthMm = s.throatShape === 'rect' ? s.rectThroatWidthMm : s.throatDiameterMm
+  const throatMinHeightMm = s.throatShape === 'rect' ? s.rectThroatHeightMm : s.throatDiameterMm
   const clampedH = clamp(s.coverageH, 20, 160)
   const usesDualCoverage = s.throatShape === 'rect' || s.mode === 'rect'
   const clampedV = clamp(usesDualCoverage ? s.coverageV : clampedH, 20, 160)
+
+  if (guideActive) {
+    return {
+      depthMm: clamp(s.depthMm, 10, 1000),
+      mouthWidthMm: clamp(s.mouthWidthMm, throatMinWidthMm, 2000),
+      mouthHeightMm: clamp(s.mouthHeightMm, throatMinHeightMm, 2000),
+    }
+  }
 
   if (s.sizeMode === 'depth') {
     const depth = clamp(s.depthMm, 10, 1000)
@@ -549,6 +625,7 @@ export function App() {
 
     const throatShape = next0.throatShape === 'rect' ? 'rect' : 'round'
     const mode = throatShape === 'rect' ? 'rect' : next0.mode === 'rect' ? 'rect' : 'round'
+    const guideType = normalizeGuideType(next0.guideType)
     const coverageH = clamp(next0.coverageH, 20, 160)
     const usesDualCoverage = throatShape === 'rect' || mode === 'rect'
     const coverageV = clamp(usesDualCoverage ? next0.coverageV : coverageH, 20, 160)
@@ -558,6 +635,11 @@ export function App() {
     const rectThroatWidthMm = clamp(next0.rectThroatWidthMm, 1, 2000)
     const rectThroatHeightMm = clamp(next0.rectThroatHeightMm, 1, 2000)
     const throatAngleDeg = clamp(next0.throatAngleDeg, 0, 30)
+    const guideWidthMm = clamp(next0.guideWidthMm, 1, 2000)
+    const guideHeightMm = clamp(next0.guideHeightMm, 1, 2000)
+    const guideDistPercent = clamp(next0.guideDistPercent, 1, 100)
+    const guideSuperellipseN = clamp(next0.guideSuperellipseN, 2, 20)
+    const guideSuperformulaText = formatNumberListText(next0.guideSuperformulaText)
     const mouthTermination: 'none' | 'r-osse' = next0.mouthTermination === 'r-osse' ? 'r-osse' : 'none'
     const rollbackAngleDeg = clamp(next0.rollbackAngleDeg, 0, 360)
 
@@ -565,6 +647,12 @@ export function App() {
       ...next0,
       throatShape,
       mode,
+      guideType,
+      guideWidthMm,
+      guideHeightMm,
+      guideDistPercent,
+      guideSuperellipseN,
+      guideSuperformulaText,
       coverageH,
       coverageV,
       sizeMode,
@@ -586,10 +674,20 @@ export function App() {
     const cornerRadiusMm = clamp(normalized.cornerRadiusMm, 0, cornerRadiusLimit)
 
     const coverageAngleExpr = buildCoverageExprDeg(coverageH, coverageV)
+    const guideActive = normalized.guideType !== 0
+    const rectGuideMorphActive = throatShape === 'rect' && guideActive
+    const guideAspectRatio = normalized.guideHeightMm / Math.max(normalized.guideWidthMm, 1e-6)
+    const guideDistValue = normalized.guideDistPercent / 100
 
     const updates: Record<string, unknown> = {
       [KEY_THROAT_SHAPE]: throatShape,
       [KEY_MODE]: mode,
+      [KEY_GUIDE_TYPE]: guideType,
+      [KEY_GUIDE_W]: guideWidthMm,
+      [KEY_GUIDE_H]: guideHeightMm,
+      [KEY_GUIDE_DIST]: guideDistPercent,
+      [KEY_GUIDE_SE_N]: guideSuperellipseN,
+      [KEY_GUIDE_SF]: guideSuperformulaText,
       [KEY_COV_H]: coverageH,
       [KEY_COV_V]: coverageV,
       [KEY_SIZE_MODE]: sizeMode,
@@ -605,14 +703,26 @@ export function App() {
       'Throat.Profile': 1,
       'Throat.Diameter': throatDiameterMm,
       'Throat.Angle': formatNumber(throatAngleDeg),
-      'GCurve.Type': undefined,
-      'Coverage.Angle': throatShape === 'rect' ? undefined : coverageAngleExpr,
+      'GCurve.Type': guideActive ? guideType : undefined,
+      'GCurve.Dist': guideActive ? formatNumber(guideDistValue, 3) : undefined,
+      'GCurve.Width': guideActive ? guideWidthMm : undefined,
+      'GCurve.AspectRatio': guideActive ? guideAspectRatio : undefined,
+      'GCurve.SE.n': guideActive && guideType === 1 ? guideSuperellipseN : undefined,
+      'GCurve.SF': guideActive && guideType === 2 ? guideSuperformulaText : undefined,
+      'GCurve.Rot': guideActive ? 0 : undefined,
+      'Coverage.Angle': throatShape === 'rect' || guideActive ? undefined : coverageAngleExpr,
       Length: formatNumber(depthMm),
-      'Morph.TargetShape': throatShape === 'rect' ? 0 : mode === 'rect' ? 1 : 0,
-      'Morph.TargetWidth': throatShape === 'rect' ? 0 : mode === 'rect' ? mouthWidthMm : 0,
-      'Morph.TargetHeight': throatShape === 'rect' ? 0 : mode === 'rect' ? mouthHeightMm : 0,
+      'Morph.TargetShape': throatShape === 'rect' ? (rectGuideMorphActive ? 1 : 0) : mode === 'rect' ? 1 : 0,
+      'Morph.TargetWidth': throatShape === 'rect' ? (rectGuideMorphActive ? mouthWidthMm : 0) : mode === 'rect' ? mouthWidthMm : 0,
+      'Morph.TargetHeight': throatShape === 'rect' ? (rectGuideMorphActive ? mouthHeightMm : 0) : mode === 'rect' ? mouthHeightMm : 0,
       'Morph.CornerRadius': throatShape === 'rect' ? 0 : mode === 'rect' ? cornerRadiusMm : 0,
-      'Morph.AllowShrinkage': throatShape === 'rect' ? false : mode === 'rect',
+      'Morph.FixedPart': throatShape === 'rect' ? (rectGuideMorphActive ? '0' : undefined) : mode === 'rect' ? '0' : undefined,
+      'Morph.Rate': throatShape === 'rect' ? (rectGuideMorphActive ? '3' : undefined) : mode === 'rect' ? '3' : undefined,
+      'Morph.AllowShrinkage': throatShape === 'rect' ? rectGuideMorphActive : mode === 'rect',
+      'OS.k': 1,
+      'Term.s': '0.5',
+      'Term.q': '0.996',
+      'Term.n': '4',
       '_athui.MouthTermination': normalized.mouthTermination,
       '_athui.RollbackAngleDeg': normalized.rollbackAngleDeg,
     }
@@ -935,6 +1045,7 @@ function DesignSection({
   const state = designerState
   const throatPreset = findNearestThroatPreset(state.throatDiameterMm)
   const usesDualCoverage = state.throatShape === 'rect' || state.mode === 'rect'
+  const guideActive = state.guideType !== 0
 
   const coveragePresets =
     usesDualCoverage
@@ -1058,57 +1169,156 @@ function DesignSection({
               Rect
             </button>
           </div>
+          {state.mode === 'rect' && state.throatShape === 'round' && (
+            <div className="estimate-text">
+              Rect mouth uses ATH morph from the round throat.
+            </div>
+          )}
+        </div>
+      )}
+
+      {state.mode === 'rect' && (
+        <div className="field-row">
+          <div className="field-label">GUIDING CURVE</div>
+          <div className="type-toggle">
+            <button
+              className={`type-toggle-btn ${state.guideType === 0 ? 'active' : ''}`}
+              onClick={() => applyPatch({ guideType: 0 })}
+            >
+              Off
+            </button>
+            <button
+              className={`type-toggle-btn ${state.guideType === 1 ? 'active' : ''}`}
+              onClick={() => applyPatch({ guideType: 1 })}
+            >
+              Superellipse
+            </button>
+            <button
+              className={`type-toggle-btn ${state.guideType === 2 ? 'active' : ''}`}
+              onClick={() => applyPatch({ guideType: 2 })}
+            >
+              Superformula
+            </button>
+          </div>
+          <div className="estimate-text">
+            {guideActive ? 'Guide Size' : 'Use guide controls to drive rect profile directly.'}
+          </div>
+          {guideActive && (
+            <>
+              <div className="field-inline" style={{ marginTop: 4 }}>
+                <div className="field-label" style={{ marginBottom: 4 }}>
+                  Width / Height
+                  <InfoBtn
+                    label="Guide Size"
+                    text="These values map to ATH guide controls. Width sets GCurve.Width, and Height contributes to GCurve.AspectRatio via Width / Height."
+                  />
+                </div>
+                <input
+                  className="field-input"
+                  type="number"
+                  step="1"
+                  aria-label="Guide width for ATH GCurve.Width (mm)"
+                  value={formatNumber(state.guideWidthMm, 0)}
+                  onChange={(e) => applyPatch({ guideWidthMm: Number(e.target.value) || 0 })}
+                  placeholder="GCurve.Width (mm)"
+                />
+                <input
+                  className="field-input"
+                  type="number"
+                  step="1"
+                  aria-label="Guide height for ATH GCurve.AspectRatio (derived)"
+                  value={formatNumber(state.guideHeightMm, 0)}
+                  onChange={(e) => applyPatch({ guideHeightMm: Number(e.target.value) || 0 })}
+                  placeholder="GCurve.Height (derived from Aspect Ratio)"
+                />
+              </div>
+              <div className="field-row" style={{ marginTop: 8 }}>
+                <div className="field-label">GUIDE POSITION <span className="units">% depth</span></div>
+                <input
+                  className="field-input"
+                  type="number"
+                  step="1"
+                  value={formatNumber(state.guideDistPercent, 0)}
+                  onChange={(e) => applyPatch({ guideDistPercent: Number(e.target.value) || 0 })}
+                />
+              </div>
+              {state.guideType === 1 ? (
+                <div className="field-row" style={{ marginTop: 8 }}>
+                  <div className="field-label">SUPERELLIPSE N</div>
+                  <input
+                    className="field-input"
+                    type="number"
+                    step="0.1"
+                    value={formatNumber(state.guideSuperellipseN, 1)}
+                    onChange={(e) => applyPatch({ guideSuperellipseN: Number(e.target.value) || 0 })}
+                  />
+                </div>
+              ) : (
+                <div className="field-row" style={{ marginTop: 8 }}>
+                  <div className="field-label">SUPERFORMULA</div>
+                  <input
+                    className="field-input"
+                    type="text"
+                    value={state.guideSuperformulaText}
+                    onChange={(e) => applyPatch({ guideSuperformulaText: e.target.value })}
+                    placeholder="a,b,m,n1,n2,n3"
+                  />
+                </div>
+              )}
+            </>
+          )}
         </div>
       )}
 
       {/* Coverage */}
-      <div className="field-row">
-        <div className="field-label">COVERAGE <span className="units">deg full</span></div>
-        <div className="chip-row">
-          {coveragePresets.map((p) => (
-            <button
-              key={p.id}
-              className="chip"
-              onClick={() => applyPatch({ coverageH: p.h, coverageV: p.v })}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
-        <div className="field-inline">
-          <input
-            className="field-input"
-            type="number"
-            step="1"
-            value={formatNumber(state.coverageH, 0)}
-            onChange={(e) => applyPatch({ coverageH: Number(e.target.value) || 0 })}
-            placeholder="H"
-          />
-          {usesDualCoverage && (
+      {!guideActive ? (
+        <div className="field-row">
+          <div className="field-label">COVERAGE <span className="units">deg full</span></div>
+          <div className="chip-row">
+            {coveragePresets.map((p) => (
+              <button
+                key={p.id}
+                className="chip"
+                onClick={() => applyPatch({ coverageH: p.h, coverageV: p.v })}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+          <div className="field-inline">
             <input
               className="field-input"
               type="number"
               step="1"
-              value={formatNumber(state.coverageV, 0)}
-              onChange={(e) => applyPatch({ coverageV: Number(e.target.value) || 0 })}
-              placeholder="V"
+              value={formatNumber(state.coverageH, 0)}
+              onChange={(e) => applyPatch({ coverageH: Number(e.target.value) || 0 })}
+              placeholder="H"
             />
-          )}
+            {usesDualCoverage && (
+              <input
+                className="field-input"
+                type="number"
+                step="1"
+                value={formatNumber(state.coverageV, 0)}
+                onChange={(e) => applyPatch({ coverageV: Number(e.target.value) || 0 })}
+                placeholder="V"
+              />
+            )}
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="field-row">
+          <div className="field-label">COVERAGE</div>
+          <div className="estimate-text">
+            Guiding curve mode defines the wall shape directly, so explicit coverage is not used here.
+          </div>
+        </div>
+      )}
 
       {/* Size */}
       <div className="field-row">
         <div className="field-label">SIZE</div>
-        <select
-          className="field-select"
-          value={state.sizeMode}
-          onChange={(e) => applyPatch({ sizeMode: (e.target.value === 'mouth' ? 'mouth' : 'depth') as SizeMode })}
-        >
-          <option value="depth">Set depth</option>
-          <option value="mouth">Set mouth</option>
-        </select>
-        {state.sizeMode === 'depth' ? (
+        {guideActive ? (
           <>
             <input
               className="field-input"
@@ -1117,15 +1327,7 @@ function DesignSection({
               value={formatNumber(state.depthMm, 0)}
               onChange={(e) => applyPatch({ depthMm: Number(e.target.value) || 0 })}
               placeholder="Depth mm"
-              style={{ marginTop: 4 }}
             />
-            <div className="estimate-text">
-              Mouth: {formatNumber(derived.mouthWidthMm, 0)}
-              {state.mode === 'rect' ? ` x ${formatNumber(derived.mouthHeightMm, 0)}` : ''} mm
-            </div>
-          </>
-        ) : (
-          <>
             <div className="field-inline" style={{ marginTop: 4 }}>
               <input
                 className="field-input"
@@ -1133,22 +1335,74 @@ function DesignSection({
                 step="1"
                 value={formatNumber(state.mouthWidthMm, 0)}
                 onChange={(e) => applyPatch({ mouthWidthMm: Number(e.target.value) || 0 })}
-                placeholder={state.mode === 'rect' ? 'Width mm' : 'Dia mm'}
+                placeholder="Width mm"
               />
-              {state.mode === 'rect' && (
+              <input
+                className="field-input"
+                type="number"
+                step="1"
+                value={formatNumber(state.mouthHeightMm, 0)}
+                onChange={(e) => applyPatch({ mouthHeightMm: Number(e.target.value) || 0 })}
+                placeholder="Height mm"
+              />
+            </div>
+            <div className="estimate-text">
+              Depth and mouth size stay explicit in guiding-curve mode.
+            </div>
+          </>
+        ) : (
+          <>
+            <select
+              className="field-select"
+              value={state.sizeMode}
+              onChange={(e) => applyPatch({ sizeMode: (e.target.value === 'mouth' ? 'mouth' : 'depth') as SizeMode })}
+            >
+              <option value="depth">Set depth</option>
+              <option value="mouth">Set mouth</option>
+            </select>
+            {state.sizeMode === 'depth' ? (
+              <>
                 <input
                   className="field-input"
                   type="number"
                   step="1"
-                  value={formatNumber(state.mouthHeightMm, 0)}
-                  onChange={(e) => applyPatch({ mouthHeightMm: Number(e.target.value) || 0 })}
-                  placeholder="Height mm"
+                  value={formatNumber(state.depthMm, 0)}
+                  onChange={(e) => applyPatch({ depthMm: Number(e.target.value) || 0 })}
+                  placeholder="Depth mm"
+                  style={{ marginTop: 4 }}
                 />
-              )}
-            </div>
-            <div className="estimate-text">
-              Depth: {formatNumber(derived.depthMm, 0)} mm
-            </div>
+                <div className="estimate-text">
+                  Mouth: {formatNumber(derived.mouthWidthMm, 0)}
+                  {state.mode === 'rect' ? ` x ${formatNumber(derived.mouthHeightMm, 0)}` : ''} mm
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="field-inline" style={{ marginTop: 4 }}>
+                  <input
+                    className="field-input"
+                    type="number"
+                    step="1"
+                    value={formatNumber(state.mouthWidthMm, 0)}
+                    onChange={(e) => applyPatch({ mouthWidthMm: Number(e.target.value) || 0 })}
+                    placeholder={state.mode === 'rect' ? 'Width mm' : 'Dia mm'}
+                  />
+                  {state.mode === 'rect' && (
+                    <input
+                      className="field-input"
+                      type="number"
+                      step="1"
+                      value={formatNumber(state.mouthHeightMm, 0)}
+                      onChange={(e) => applyPatch({ mouthHeightMm: Number(e.target.value) || 0 })}
+                      placeholder="Height mm"
+                    />
+                  )}
+                </div>
+                <div className="estimate-text">
+                  Depth: {formatNumber(derived.depthMm, 0)} mm
+                </div>
+              </>
+            )}
           </>
         )}
       </div>
@@ -1272,6 +1526,7 @@ function MeshSection({
         <>
           <CompactItemField itemKey="Mesh.AngularSegments" schema={schema} values={values} setValue={setValue} />
           <CompactItemField itemKey="Mesh.LengthSegments" schema={schema} values={values} setValue={setValue} />
+          <CompactItemField itemKey="Mesh.CornerSegments" schema={schema} values={values} setValue={setValue} />
           <CompactItemField itemKey="Mesh.ThroatResolution" schema={schema} values={values} setValue={setValue} />
           <CompactItemField itemKey="Mesh.MouthResolution" schema={schema} values={values} setValue={setValue} />
         </>
@@ -1410,6 +1665,26 @@ function CompactItemField({
     setValue(itemKey, next)
   }
 
+  function handleSelectChange(raw: string) {
+    if (raw === '' && required && spec.default !== undefined) {
+      setValue(itemKey, spec.default)
+      return
+    }
+    if (itemKey === '_athui.MeshQuality') {
+      setValue(itemKey, raw)
+      const preset = raw as MeshQualityPreset
+      if (preset && preset !== 'custom') {
+        const next = getMeshQualityPresetValues(preset)
+        for (const key of meshQualityKeys) {
+          const v = next[key]
+          if (v !== undefined) setValue(key, v)
+        }
+      }
+      return
+    }
+    onChange(raw)
+  }
+
   // Checkbox
   if (spec.ui.widget === 'checkbox') {
     return (
@@ -1442,12 +1717,7 @@ function CompactItemField({
           className="field-select"
           value={stringValue}
           onChange={(e) => {
-            const raw = e.target.value
-            if (raw === '' && required && spec.default !== undefined) {
-              setValue(itemKey, spec.default)
-              return
-            }
-            onChange(raw)
+            handleSelectChange(e.target.value)
           }}
         >
           <option value="" disabled={required}>-</option>

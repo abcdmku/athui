@@ -494,9 +494,9 @@ export const defaultSchema: AthUiSchema = {
       label: 'Superformula Parameters',
       valueType: 'f[]',
       description: 'Array: a,b,m,n1,n2,n3.',
-      default: [0.95, 0.82, 4, 0.8, 7, 1.9],
+      default: [1, 1, 4, 0.8, 8, 2],
       visibleWhen: [{ key: 'GCurve.Type', op: 'eq', value: 2 }],
-      ui: { widget: 'numberList', placeholder: '0.95,0.82,4,0.8,7,1.9', help: 'Comma-separated: a,b,m,n1,n2,n3.' },
+      ui: { widget: 'numberList', placeholder: '1,1,4,0.8,8,2', help: 'Comma-separated: a,b,m,n1,n2,n3.' },
     },
     'GCurve.Rot': {
       key: 'GCurve.Rot',
@@ -691,9 +691,13 @@ export const defaultSchema: AthUiSchema = {
       key: 'Mesh.AngularSegments',
       label: 'Angular Segments',
       valueType: 'i',
-      description: 'Total number of profiles around the waveguide.',
-      default: 64,
-      ui: { widget: 'number', placeholder: '64', help: 'Typical: 64–128. Must be multiple of 4 (auto-adjusted).' },
+      description: 'Minimum number of profiles around the waveguide.',
+      default: 128,
+      ui: {
+        widget: 'number',
+        placeholder: '128',
+        help: 'Typical: 128-256. Must be multiple of 4 (auto-adjusted). In simple rect-guide mode the post-process may increase this to match the requested throat/mouth resolution.',
+      },
     },
     'Mesh.LengthSegments': {
       key: 'Mesh.LengthSegments',
@@ -701,16 +705,20 @@ export const defaultSchema: AthUiSchema = {
       valueType: 'i',
       description: 'Number of slices along the length.',
       default: 20,
-      ui: { widget: 'number', placeholder: '20', help: 'Typical: 20–60. Higher = smoother, slower.' },
+      ui: {
+        widget: 'number',
+        placeholder: '20',
+        help: 'Typical: 20–60. Higher = smoother, slower. In simple rect-guide mode this also drives the source throat-to-mouth segmentation before post-processing.',
+      },
     },
     'Mesh.CornerSegments': {
       key: 'Mesh.CornerSegments',
       label: 'Corner Segments',
       valueType: 'i',
       description: 'Profiles reserved for rectangle corners (Morph.TargetShape=1).',
-      default: 16,
+      default: 24,
       visibleWhen: [{ key: 'Morph.TargetShape', op: 'eq', value: 1 }],
-      ui: { widget: 'number', placeholder: '16', help: 'Typical: 12–32.', advanced: true },
+      ui: { widget: 'number', placeholder: '24', help: 'Typical: 24-48 for larger radiused rectangle mouths.', advanced: true },
     },
     'Mesh.ThroatSegments': {
       key: 'Mesh.ThroatSegments',
@@ -727,7 +735,11 @@ export const defaultSchema: AthUiSchema = {
       units: 'mm',
       description: 'Nominal mesh resolution at z=0.',
       default: 4,
-      ui: { widget: 'number', placeholder: '4', help: 'Typical: 2–6. Smaller = finer mesh.' },
+      ui: {
+        widget: 'number',
+        placeholder: '4',
+        help: 'Typical: 2-6. Smaller = finer mesh. In simple rect-guide mode this also helps refine the surface where the guiding curve changes fastest.',
+      },
     },
     'Mesh.MouthResolution': {
       key: 'Mesh.MouthResolution',
@@ -736,7 +748,11 @@ export const defaultSchema: AthUiSchema = {
       units: 'mm',
       description: 'Nominal mesh resolution at z=Length.',
       default: 8,
-      ui: { widget: 'number', placeholder: '8', help: 'Typical: 6–15. Interpolated from throat resolution.' },
+      ui: {
+        widget: 'number',
+        placeholder: '8',
+        help: 'Typical: 6-15. Interpolated from throat resolution. In simple rect-guide mode this also drives mouth perimeter and slice refinement, so smaller values reduce scalloping.',
+      },
     },
     'Mesh.SubdomainSlices': {
       key: 'Mesh.SubdomainSlices',

@@ -51,12 +51,6 @@ function parseArgs(argv: string[]) {
   }
 }
 
-function withUtf8Bom(text: string): string {
-  if (!text) return '\ufeff'
-  if (text.startsWith('\ufeff')) return text
-  return `\ufeff${text}`
-}
-
 function defaultValues(): Record<string, unknown> {
   const values: Record<string, unknown> = {}
   for (const [key, spec] of Object.entries(defaultSchema.items)) {
@@ -270,7 +264,7 @@ async function runAthOnce(opts: {
   const { text: projectCfgText, errors } = buildProjectCfgText(defaultSchema, opts.values, { includeAdvanced: true })
   if (errors.length) throw new Error(`Config errors:\n${errors.map((e) => `- ${e}`).join('\n')}`)
   const projectCfgPath = path.join(opts.runDir, 'project.cfg')
-  await fs.writeFile(projectCfgPath, withUtf8Bom(projectCfgText), 'utf8')
+  await fs.writeFile(projectCfgPath, projectCfgText, 'utf8')
 
   const child = spawn(athExe, [projectCfgPath], { cwd: opts.runDir, windowsHide: true })
 

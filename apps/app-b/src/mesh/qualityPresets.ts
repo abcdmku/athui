@@ -11,6 +11,7 @@ export const meshQualityPresetOptions: { value: MeshQualityPreset; label: string
 export const meshQualityKeys = [
   'Mesh.AngularSegments',
   'Mesh.LengthSegments',
+  'Mesh.CornerSegments',
   'Mesh.ThroatResolution',
   'Mesh.MouthResolution',
 ] as const
@@ -18,28 +19,32 @@ export const meshQualityKeys = [
 const presets: Record<Exclude<MeshQualityPreset, 'custom'>, Record<(typeof meshQualityKeys)[number], number>> = {
   low: {
     // Former "medium"
-    'Mesh.AngularSegments': 64,
+    'Mesh.AngularSegments': 96,
     'Mesh.LengthSegments': 50,
+    'Mesh.CornerSegments': 16,
     'Mesh.ThroatResolution': 4,
     'Mesh.MouthResolution': 8,
   },
   medium: {
     // Former "high"
-    'Mesh.AngularSegments': 96,
+    'Mesh.AngularSegments': 128,
     'Mesh.LengthSegments': 80,
+    'Mesh.CornerSegments': 24,
     'Mesh.ThroatResolution': 2,
     'Mesh.MouthResolution': 5,
   },
   high: {
     // Former "ultra"
-    'Mesh.AngularSegments': 128,
+    'Mesh.AngularSegments': 192,
     'Mesh.LengthSegments': 120,
+    'Mesh.CornerSegments': 32,
     'Mesh.ThroatResolution': 0.5,
     'Mesh.MouthResolution': 1.5,
   },
   ultra: {
-    'Mesh.AngularSegments': 256,
+    'Mesh.AngularSegments': 320,
     'Mesh.LengthSegments': 240,
+    'Mesh.CornerSegments': 48,
     'Mesh.ThroatResolution': 0.3,
     'Mesh.MouthResolution': 0.9,
   },
